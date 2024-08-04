@@ -1,4 +1,4 @@
-BIN=$HOME/projects/chv-lambda/resources/bin
+BIN=/home/maverick/projects/chv-lambda/resources/bin
 CHV_BIN=${BIN}/cloud-hypervisor
 KERNEL=${BIN}/compiled-vmlinux.bin
 ROOTFS=${BIN}/ext4.img
