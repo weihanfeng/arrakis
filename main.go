@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/abshkbh/chv-lambda/chv-api/openapi"
+	"github.com/abshkbh/chv-lambda/openapi"
 )
 
 func createVM(client *openapi.APIClient) error {
