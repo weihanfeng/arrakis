@@ -23,7 +23,6 @@ const (
 	// Case sensitive.
 	consolePortMode = "Off"
 	chvBinPath      = "/home/maverick/projects/chv-lambda/resources/bin/cloud-hypervisor"
-	apiSocketPath   = "/tmp/chv.sock"
 )
 
 var (
@@ -196,9 +195,18 @@ func main() {
 				Name:    "create",
 				Aliases: []string{"c"},
 				Usage:   "Create and start a new VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM to create",
+						Required: true,
+					},
+				},
 				Action: func(cCtx *cli.Context) error {
-					// TODO: Use cCtx here.
-					return createVM(context.Background(), "foo")
+					vmName := cCtx.String("name")
+					// TODO: Use correct ctx.
+					return createVM(context.Background(), vmName)
 				},
 			},
 			{
@@ -229,10 +237,5 @@ func main() {
 	err := app.Run(os.Args)
 	if err != nil {
 		log.WithError(err).Fatal("exit")
-	}
-
-	err = os.Remove(apiSocketPath)
-	if err != nil {
-		log.Printf("failed to delete api socket: %v", err)
 	}
 }
