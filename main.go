@@ -47,7 +47,26 @@ func runCloudHypervisor(chvBinPath string, apiSocketPath string) error {
 	return nil
 }
 
-func createVM(ctx context.Context, client *openapi.APIClient) error {
+func getSocketPath(vmName string) string {
+	return fmt.Sprintf("/tmp/%s.sock", vmName)
+}
+
+func createVM(ctx context.Context, vmName string) error {
+	apiSocketPath := getSocketPath(vmName)
+
+	go func() {
+		err := runCloudHypervisor(chvBinPath, apiSocketPath)
+		if err != nil {
+			log.WithError(err).Fatal("failed to spawn cloud-hypervisor server")
+		}
+	}()
+
+	apiClient := createApiClient(apiSocketPath)
+	err := waitForServer(context.Background(), apiClient, 10*time.Second)
+	if err != nil {
+		log.WithError(err).Fatal("failed to wait for cloud-hypervisor server")
+	}
+
 	// Create a new VM configuration
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
@@ -61,7 +80,7 @@ func createVM(ctx context.Context, client *openapi.APIClient) error {
 		Console: openapi.NewConsoleConfig(consolePortMode),
 	}
 
-	req := client.DefaultAPI.CreateVM(ctx)
+	req := apiClient.DefaultAPI.CreateVM(ctx)
 	req = req.VmConfig(vmConfig)
 
 	// Execute the request
@@ -76,7 +95,7 @@ func createVM(ctx context.Context, client *openapi.APIClient) error {
 	}
 
 	log.Infof("before bootVM")
-	resp, err = client.DefaultAPI.BootVM(ctx).Execute()
+	resp, err = apiClient.DefaultAPI.BootVM(ctx).Execute()
 	if err != nil {
 		return fmt.Errorf("failed to boot VM: %w %v", err, resp.Body)
 	}
@@ -89,8 +108,23 @@ func createVM(ctx context.Context, client *openapi.APIClient) error {
 	return nil
 }
 
-func info(ctx context.Context, client *openapi.APIClient) (string, error) {
-	resp, r, err := client.DefaultAPI.VmmPingGet(ctx).Execute()
+func info(ctx context.Context) (string, error) {
+	apiSocketPath := getSocketPath("dummy")
+
+	go func() {
+		err := runCloudHypervisor(chvBinPath, apiSocketPath)
+		if err != nil {
+			log.WithError(err).Fatal("failed to spawn cloud-hypervisor server")
+		}
+	}()
+
+	apiClient := createApiClient(apiSocketPath)
+	err := waitForServer(context.Background(), apiClient, 10*time.Second)
+	if err != nil {
+		log.WithError(err).Fatal("failed to wait for cloud-hypervisor server")
+	}
+
+	resp, r, err := apiClient.DefaultAPI.VmmPingGet(ctx).Execute()
 	if err != nil {
 		return "", fmt.Errorf("sanity check failed: %w", err)
 	}
@@ -113,7 +147,7 @@ func unixSocketClient(socketPath string) *http.Client {
 	}
 }
 
-func createApiClient() *openapi.APIClient {
+func createApiClient(apiSocketPath string) *openapi.APIClient {
 	configuration := openapi.NewConfiguration()
 	configuration.HTTPClient = unixSocketClient(apiSocketPath)
 	configuration.Servers = openapi.ServerConfigurations{
@@ -154,19 +188,6 @@ func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout ti
 }
 
 func main() {
-	go func() {
-		err := runCloudHypervisor(chvBinPath, apiSocketPath)
-		if err != nil {
-			log.WithError(err).Fatal("failed to spawn cloud-hypervisor server")
-		}
-	}()
-
-	apiClient := createApiClient()
-	err := waitForServer(context.Background(), apiClient, 10*time.Second)
-	if err != nil {
-		log.WithError(err).Fatal("failed to wait for cloud-hypervisor server")
-	}
-
 	app := &cli.App{
 		Name:  "chv-cli",
 		Usage: "A CLI for managing Cloud Hypervisor VMs",
@@ -177,7 +198,7 @@ func main() {
 				Usage:   "Create and start a new VM",
 				Action: func(cCtx *cli.Context) error {
 					// TODO: Use cCtx here.
-					return createVM(context.Background(), apiClient)
+					return createVM(context.Background(), "foo")
 				},
 			},
 			{
@@ -186,7 +207,7 @@ func main() {
 				Usage:   "Checks if chv server is running",
 				Action: func(cCtx *cli.Context) error {
 					// TODO: Use cCtx here.
-					buildVersion, err := info(context.Background(), apiClient)
+					buildVersion, err := info(context.Background())
 					if err != nil {
 						return err
 					}
@@ -205,7 +226,7 @@ func main() {
 		},
 	}
 
-	err = app.Run(os.Args)
+	err := app.Run(os.Args)
 	if err != nil {
 		log.WithError(err).Fatal("exit")
 	}
