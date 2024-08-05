@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/abshkbh/chv-lambda/openapi"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -112,7 +112,10 @@ func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout ti
 			default:
 				resp, r, err := apiClient.DefaultAPI.VmmPingGet(ctx).Execute()
 				if err == nil {
-					log.Printf("server up: %v %v", resp, r)
+					log.WithFields(log.Fields{
+						"buildVersion": resp.BuildVersion,
+						"statusCode":   r.StatusCode,
+					}).Info("cloud-hypserver up")
 					errCh <- nil
 					return
 				}
@@ -128,14 +131,14 @@ func main() {
 	go func() {
 		err := runCloudHypervisor(chvBinPath, apiSocketPath)
 		if err != nil {
-			log.Fatalf("failed to spawn chv: %v", err)
+			log.WithError(err).Fatal("failed to spawn cloud-hypervisor server")
 		}
 	}()
 
 	apiClient := createApiClient()
 	err := waitForServer(context.Background(), apiClient, 10*time.Second)
 	if err != nil {
-		log.Fatalf("failed to start server: %v", err)
+		log.WithError(err).Fatal("failed to wait for cloud-hypervisor server")
 	}
 
 	err = os.Remove(apiSocketPath)
