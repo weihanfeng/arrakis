@@ -18,8 +18,10 @@ const (
 	binPath         = "/home/maverick/projects/chv-lambda/resources/bin"
 	numBootVcpus    = 1
 	memorySizeBytes = 512 * 1024 * 1024
-	serialPortMode  = "tty"
-	consolePortMode = "off"
+	// Case sensitive.
+	serialPortMode = "Tty"
+	// Case sensitive.
+	consolePortMode = "Off"
 	chvBinPath      = "/home/maverick/projects/chv-lambda/resources/bin/cloud-hypervisor"
 	apiSocketPath   = "/tmp/chv.sock"
 )
@@ -59,35 +61,34 @@ func createVM(ctx context.Context, client *openapi.APIClient) error {
 		Console: openapi.NewConsoleConfig(consolePortMode),
 	}
 
-	// Create the request
 	req := client.DefaultAPI.CreateVM(ctx)
 	req = req.VmConfig(vmConfig)
 
 	// Execute the request
 	resp, err := req.Execute()
 	if err != nil {
-		return fmt.Errorf("failed to start VM: %w", err)
+		return fmt.Errorf("failed to start VM: %w %v", err, resp.Body)
 	}
 
-	// Check the response
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to start VM: %d", resp.StatusCode)
+	log.Infof("resp: %v", resp)
+	if resp.StatusCode != 200 && resp.StatusCode != 204 {
+		return fmt.Errorf("failed to start VM. bad status: %v", resp)
 	}
 
 	return nil
 }
 
-func sanityCheck(ctx context.Context, client *openapi.APIClient) error {
-	_, r, err := client.DefaultAPI.VmmPingGet(ctx).Execute()
+func info(ctx context.Context, client *openapi.APIClient) (string, error) {
+	resp, r, err := client.DefaultAPI.VmmPingGet(ctx).Execute()
 	if err != nil {
-		return fmt.Errorf("sanity check failed: %w", err)
+		return "", fmt.Errorf("sanity check failed: %w", err)
 	}
 
 	if r.StatusCode != 200 {
-		return fmt.Errorf("sanity check failed. status code: %d", r.StatusCode)
+		return "", fmt.Errorf("sanity check failed. status code: %d", r.StatusCode)
 	}
 
-	return nil
+	return fmt.Sprintf("chv buildVersion=%s", *resp.BuildVersion), nil
 }
 
 func unixSocketClient(socketPath string) *http.Client {
@@ -127,7 +128,7 @@ func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout ti
 				resp, r, err := apiClient.DefaultAPI.VmmPingGet(ctx).Execute()
 				if err == nil {
 					log.WithFields(log.Fields{
-						"buildVersion": resp.BuildVersion,
+						"buildVersion": *resp.BuildVersion,
 						"statusCode":   r.StatusCode,
 					}).Info("cloud-hypervisor server up")
 					errCh <- nil
@@ -169,12 +170,17 @@ func main() {
 				},
 			},
 			{
-				Name:    "sanitycheck",
-				Aliases: []string{"s"},
+				Name:    "info",
+				Aliases: []string{"i"},
 				Usage:   "Checks if chv server is running",
 				Action: func(cCtx *cli.Context) error {
 					// TODO: Use cCtx here.
-					return sanityCheck(context.Background(), apiClient)
+					buildVersion, err := info(context.Background(), apiClient)
+					if err != nil {
+						return err
+					}
+					log.WithField("buildVersion", buildVersion).Info("chv server healthy")
+					return nil
 				},
 			},
 			{
