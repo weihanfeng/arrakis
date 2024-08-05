@@ -87,36 +87,56 @@ func unixSocketClient(socketPath string) *http.Client {
 	}
 }
 
-func main() {
-	fmt.Println("Hello, World!")
+func createApiClient() *openapi.APIClient {
+	configuration := openapi.NewConfiguration()
+	configuration.HTTPClient = unixSocketClient(apiSocketPath)
+	configuration.Servers = openapi.ServerConfigurations{
+		{
+			URL: "http://localhost/api/v1", // This is required but won't be used
+		},
+	}
+	return openapi.NewAPIClient(configuration)
+}
 
+func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return
+			default:
+				resp, r, err := apiClient.DefaultAPI.VmmPingGet(ctx).Execute()
+				if err == nil {
+					log.Printf("server up: %v %v", resp, r)
+					errCh <- nil
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	}()
+
+	return <-errCh
+}
+
+func main() {
 	go func() {
 		err := runCloudHypervisor(chvBinPath, apiSocketPath)
 		if err != nil {
 			log.Fatalf("failed to spawn chv: %v", err)
 		}
 	}()
-	log.Println("After spawn")
-	time.Sleep(5 * time.Second)
 
-	configuration := openapi.NewConfiguration()
-	configuration.HTTPClient = unixSocketClient(apiSocketPath)
-	configuration.Servers = openapi.ServerConfigurations{
-		{
-			URL: "http://localhost", // This is required but won't be used
-		},
-	}
-	apiClient := openapi.NewAPIClient(configuration)
-
-	// Now use the apiClient to make requests
-	ctx := context.Background()
-	resp, r, err := apiClient.DefaultAPI.VmmPingGet(ctx).Execute()
+	apiClient := createApiClient()
+	err := waitForServer(context.Background(), apiClient, 10*time.Second)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Printf("Full HTTP response: %v\n", r)
+		log.Fatalf("failed to start server: %v", err)
 	}
-	// Process the response
-	fmt.Printf("Response from server: %v\n", resp)
 
 	err = os.Remove(apiSocketPath)
 	if err != nil {
