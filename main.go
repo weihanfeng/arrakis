@@ -38,9 +38,9 @@ func runCloudHypervisor(chvBinPath string, apiSocketPath string) error {
 	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
 
 	// Run the command and capture output and error
-	_, err := cmd.CombinedOutput()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("error spawning chv binary: %w", err)
+		return fmt.Errorf("error spawning chv binary: %w output: %s", err, string(out))
 	}
 
 	log.Println("Spawn successful")
@@ -55,7 +55,7 @@ func createVM(ctx context.Context, client *openapi.APIClient) error {
 			Cmdline: &kernelCmdline,
 		},
 		Disks:   []openapi.DiskConfig{{Path: rootfsPath}},
-		Cpus:    &openapi.CpusConfig{BootVcpus: numBootVcpus},
+		Cpus:    &openapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
 		Memory:  &openapi.MemoryConfig{Size: memorySizeBytes},
 		Serial:  openapi.NewConsoleConfig(serialPortMode),
 		Console: openapi.NewConsoleConfig(consolePortMode),
@@ -70,9 +70,20 @@ func createVM(ctx context.Context, client *openapi.APIClient) error {
 		return fmt.Errorf("failed to start VM: %w %v", err, resp.Body)
 	}
 
-	log.Infof("resp: %v", resp)
+	log.Infof("create resp: %v", resp)
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
 		return fmt.Errorf("failed to start VM. bad status: %v", resp)
+	}
+
+	log.Infof("before bootVM")
+	resp, err = client.DefaultAPI.BootVM(ctx).Execute()
+	if err != nil {
+		return fmt.Errorf("failed to boot VM: %w %v", err, resp.Body)
+	}
+
+	log.Infof("boot resp: %v", resp)
+	if resp.StatusCode != 200 && resp.StatusCode != 204 {
+		return fmt.Errorf("failed to boot VM. bad status: %v", resp)
 	}
 
 	return nil
