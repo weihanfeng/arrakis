@@ -11,6 +11,7 @@ import (
 
 	"github.com/abshkbh/chv-lambda/openapi"
 	log "github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v2"
 )
 
 const (
@@ -76,6 +77,19 @@ func createVM(ctx context.Context, client *openapi.APIClient) error {
 	return nil
 }
 
+func sanityCheck(ctx context.Context, client *openapi.APIClient) error {
+	_, r, err := client.DefaultAPI.VmmPingGet(ctx).Execute()
+	if err != nil {
+		return fmt.Errorf("sanity check failed: %w", err)
+	}
+
+	if r.StatusCode != 200 {
+		return fmt.Errorf("sanity check failed. status code: %d", r.StatusCode)
+	}
+
+	return nil
+}
+
 func unixSocketClient(socketPath string) *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
@@ -92,7 +106,7 @@ func createApiClient() *openapi.APIClient {
 	configuration.HTTPClient = unixSocketClient(apiSocketPath)
 	configuration.Servers = openapi.ServerConfigurations{
 		{
-			URL: "http://localhost/api/v1", // This is required but won't be used
+			URL: "http://localhost/api/v1",
 		},
 	}
 	return openapi.NewAPIClient(configuration)
@@ -115,7 +129,7 @@ func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout ti
 					log.WithFields(log.Fields{
 						"buildVersion": resp.BuildVersion,
 						"statusCode":   r.StatusCode,
-					}).Info("cloud-hypserver up")
+					}).Info("cloud-hypervisor server up")
 					errCh <- nil
 					return
 				}
@@ -139,6 +153,44 @@ func main() {
 	err := waitForServer(context.Background(), apiClient, 10*time.Second)
 	if err != nil {
 		log.WithError(err).Fatal("failed to wait for cloud-hypervisor server")
+	}
+
+	app := &cli.App{
+		Name:  "chv-cli",
+		Usage: "A CLI for managing Cloud Hypervisor VMs",
+		Commands: []*cli.Command{
+			{
+				Name:    "create",
+				Aliases: []string{"c"},
+				Usage:   "Create and start a new VM",
+				Action: func(cCtx *cli.Context) error {
+					// TODO: Use cCtx here.
+					return createVM(context.Background(), apiClient)
+				},
+			},
+			{
+				Name:    "sanitycheck",
+				Aliases: []string{"s"},
+				Usage:   "Checks if chv server is running",
+				Action: func(cCtx *cli.Context) error {
+					// TODO: Use cCtx here.
+					return sanityCheck(context.Background(), apiClient)
+				},
+			},
+			{
+				Name:    "help",
+				Aliases: []string{"h"},
+				Usage:   "Show help information for commands",
+				Action: func(cCtx *cli.Context) error {
+					return cli.ShowAppHelp(cCtx)
+				},
+			},
+		},
+	}
+
+	err = app.Run(os.Args)
+	if err != nil {
+		log.WithError(err).Fatal("exit")
 	}
 
 	err = os.Remove(apiSocketPath)
