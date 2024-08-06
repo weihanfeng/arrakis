@@ -35,11 +35,13 @@ var (
 // runCloudHypervisor starts the chv binary at `chvBinPath` on the given `apiSocket`.
 func runCloudHypervisor(chvBinPath string, apiSocketPath string) error {
 	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
+	cmd.Stdout = log.StandardLogger().Writer()
+	cmd.Stderr = log.StandardLogger().Writer()
 
-	// Run the command and capture output and error
-	out, err := cmd.CombinedOutput()
+	// Run the command
+	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("error spawning chv binary: %w output: %s", err, string(out))
+		return fmt.Errorf("error spawning chv binary: %w", err)
 	}
 
 	log.Println("Spawn successful")
@@ -237,5 +239,9 @@ func main() {
 	err := app.Run(os.Args)
 	if err != nil {
 		log.WithError(err).Fatal("exit")
+	}
+
+	for {
+
 	}
 }
