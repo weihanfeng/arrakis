@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Exit immediately if a command exits with a non-zero status
-set -e
+set -eu
 
 # Save iptables rules
 iptables-save > iptables-backup-$(date +%Y%m%d%H%M%S).rules
