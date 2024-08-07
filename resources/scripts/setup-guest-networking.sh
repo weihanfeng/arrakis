@@ -9,3 +9,5 @@ IFNAME=eth0
 ./busybox ip a add ${GUEST_IP} dev ${IFNAME}
 ./busybox ip l set ${IFNAME} up
 ./busybox ip r add default via ${GATEWAY_IP} dev ${IFNAME}
+
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
