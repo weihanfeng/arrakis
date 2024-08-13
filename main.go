@@ -23,6 +23,11 @@ const (
 	// Case sensitive.
 	consolePortMode = "Off"
 	chvBinPath      = "/home/maverick/projects/chv-lambda/resources/bin/cloud-hypervisor"
+
+	tapDeviceName           = "tap0"
+	numNetDeviceQueues      = 2
+	netDeviceQueueSizeBytes = 256
+	netDeviceId             = "_net0"
 )
 
 var (
@@ -31,6 +36,14 @@ var (
 	initPath      = "/bin/bash"
 	kernelCmdline = "console=ttyS0 root=/dev/vda rw init=" + initPath
 )
+
+func String(s string) *string {
+	return &s
+}
+
+func Int32(i int32) *int32 {
+	return &i
+}
 
 // runCloudHypervisor starts the chv binary at `chvBinPath` on the given `apiSocket`.
 func runCloudHypervisor(chvBinPath string, apiSocketPath string) error {
@@ -79,6 +92,7 @@ func createVM(ctx context.Context, vmName string) error {
 		Memory:  &openapi.MemoryConfig{Size: memorySizeBytes},
 		Serial:  openapi.NewConsoleConfig(serialPortMode),
 		Console: openapi.NewConsoleConfig(consolePortMode),
+		Net:     []openapi.NetConfig{{Tap: String(tapDeviceName), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
 	}
 
 	req := apiClient.DefaultAPI.CreateVM(ctx)
@@ -239,9 +253,5 @@ func main() {
 	err := app.Run(os.Args)
 	if err != nil {
 		log.WithError(err).Fatal("exit")
-	}
-
-	for {
-
 	}
 }

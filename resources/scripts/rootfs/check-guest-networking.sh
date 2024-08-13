@@ -23,16 +23,8 @@ FAIL_COUNT=0
 
 echo "Starting guest network diagnostics..."
 
-# Check if busybox exists
-if [ -f ./busybox ]; then
-    check_command "busybox exists" || ((FAIL_COUNT++))
-else
-    echo "FAIL: busybox not found in the current directory"
-    ((FAIL_COUNT++))
-fi
-
 # Check if the interface exists
-if ./busybox ip link show ${IFNAME} &> /dev/null; then
+if ip link show ${IFNAME} &> /dev/null; then
     check_command "Interface ${IFNAME} exists" || ((FAIL_COUNT++))
 else
     echo "FAIL: Interface ${IFNAME} does not exist"
@@ -40,7 +32,7 @@ else
 fi
 
 # Check if the IP address is correctly set
-if ./busybox ip addr show ${IFNAME} | ./busybox grep -q ${GUEST_IP}; then
+if ip addr show ${IFNAME} | grep -q ${GUEST_IP}; then
     check_command "IP address ${GUEST_IP} is set on ${IFNAME}" || ((FAIL_COUNT++))
 else
     echo "FAIL: IP address ${GUEST_IP} is not set on ${IFNAME}"
@@ -48,7 +40,7 @@ else
 fi
 
 # Check if the interface is up
-if ./busybox ip link show ${IFNAME} | ./busybox grep -q "UP"; then
+if ip link show ${IFNAME} | grep -q "UP"; then
     check_command "Interface ${IFNAME} is UP" || ((FAIL_COUNT++))
 else
     echo "FAIL: Interface ${IFNAME} is not UP"
@@ -56,7 +48,7 @@ else
 fi
 
 # Check if the default route is set correctly
-if ./busybox ip route | ./busybox grep -q "default via ${GATEWAY_IP} dev ${IFNAME}"; then
+if ip route | grep -q "default via ${GATEWAY_IP} dev ${IFNAME}"; then
     check_command "Default route is set correctly" || ((FAIL_COUNT++))
 else
     echo "FAIL: Default route is not set correctly"
@@ -64,7 +56,7 @@ else
 fi
 
 # Check if /etc/resolv.conf has the correct nameserver entry
-if ./busybox grep -q "nameserver ${NAMESERVER}" /etc/resolv.conf; then
+if grep -q "nameserver ${NAMESERVER}" /etc/resolv.conf; then
     check_command "Nameserver ${NAMESERVER} is set in /etc/resolv.conf" || ((FAIL_COUNT++))
 else
     echo "FAIL: Nameserver ${NAMESERVER} is not set in /etc/resolv.conf"
