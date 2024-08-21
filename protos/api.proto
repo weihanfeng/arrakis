@@ -1,6 +1,8 @@
 syntax = "proto3";
 
-package vmmanagement;
+package protos;
+
+option go_package = "../protos";
 
 service VMManagementService {
   rpc StartVM (VMRequest) returns (VMResponse) {}
