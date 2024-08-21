@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package vmmanagement;
+
+service VMManagementService {
+  rpc StartVM (VMRequest) returns (VMResponse) {}
+  rpc StopVM (VMRequest) returns (VMResponse) {}
+  rpc DestroyVM (VMRequest) returns (VMResponse) {}
+}
+
+message VMRequest {
+  string vm_name = 1;
+}
+
+message VMResponse {
+  bool success = 1;
+  string message = 2;
+}
