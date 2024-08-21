@@ -4,11 +4,16 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/abshkbh/chv-lambda/out/protos"
 	"google.golang.org/grpc"
+)
+
+const (
+	vmStatePath = "/run/chv-lambda"
 )
 
 type server struct {
@@ -43,6 +48,11 @@ func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.
 }
 
 func main() {
+	err := os.MkdirAll(vmStatePath, 0755)
+	if err != nil {
+		log.WithError(err).Fatal("failed to create vm state dir")
+	}
+
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)

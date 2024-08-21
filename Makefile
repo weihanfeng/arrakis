@@ -1,10 +1,15 @@
 OUT_DIR := out
 PROTOS_DIR := protos
 
-.PHONY: build
-build: generate-protos
+.PHONY: build-bin
+build-bin: generate-protos
 	mkdir -p $(OUT_DIR)
-	go build -o $(OUT_DIR)/chv-lambda main.go
+	go build -o $(OUT_DIR)/chv-lambda-cli main.go
+
+.PHONY: build-server
+build-server: generate-protos
+	mkdir -p $(OUT_DIR)
+	go build -o $(OUT_DIR)/chv-lambda-server cmd/server/server.go
 
 .PHONY: generate-protos
 generate-protos:
@@ -16,4 +21,4 @@ clean:
 	rm -rf $(OUT_DIR)
 
 .PHONY: all
-all: clean build
+all: clean build-bin build-server
