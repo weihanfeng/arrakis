@@ -192,8 +192,8 @@ type server struct {
 }
 
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
-	log.Infof("received request to start VM: %v", req.GetVmName())
 	vmName := req.GetVmName()
+	log.WithField("vmName", vmName).Infof("received request to start VM")
 	err := createVM(ctx, vmName)
 
 	if err != nil {
@@ -204,13 +204,13 @@ func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VM
 }
 
 func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
-	log.Printf("Received request to stop VM: %v", req.GetVmName())
+	log.WithField("vmName", req.GetVmName()).Infof("received request to stop VM")
 	// Implement your VM stop logic here
 	return &protos.VMResponse{}, nil
 }
 
 func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
-	log.Printf("Received request to destroy VM: %v", req.GetVmName())
+	log.WithField("vmName", req.GetVmName()).Infof("received request to destroy VM")
 	// Implement your VM destroy logic here
 	return &protos.VMResponse{}, nil
 }

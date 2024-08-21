@@ -11,6 +11,11 @@ server: protos
 	mkdir -p $(OUT_DIR)
 	go build -o $(OUT_DIR)/chv-lambda-server cmd/server/server.go
 
+.PHONY: client
+client: protos
+	mkdir -p $(OUT_DIR)
+	go build -o $(OUT_DIR)/chv-lambda-client cmd/client/client.go
+
 .PHONY: protos
 protos:
 	mkdir -p $(OUT_DIR)
@@ -21,4 +26,4 @@ clean:
 	rm -rf $(OUT_DIR)
 
 .PHONY: all
-all: clean cli server
+all: clean cli server client
