@@ -49,6 +49,14 @@ func Int32(i int32) *int32 {
 	return &i
 }
 
+type vm struct {
+	name          string
+	stateDirPath  string
+	apiSocketPath string
+	apiClient     *openapi.APIClient
+	process       *os.Process
+}
+
 // runCloudHypervisor starts the chv binary at `chvBinPath` on the given `apiSocket`.
 func runCloudHypervisor(chvBinPath string, apiSocketPath string) error {
 	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
@@ -65,7 +73,7 @@ func runCloudHypervisor(chvBinPath string, apiSocketPath string) error {
 	return nil
 }
 
-func getVmStateDir(vmName string) string {
+func getVmStateDirPath(vmName string) string {
 	return path.Join(stateDir, vmName)
 }
 
@@ -124,28 +132,37 @@ func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout ti
 	return <-errCh
 }
 
-func createVM(ctx context.Context, vmName string) error {
-	vmStateDir := getVmStateDir(vmName)
+func createVM(ctx context.Context, vmName string) (*vm, error) {
+	vmStateDir := getVmStateDirPath(vmName)
 	err := os.MkdirAll(vmStateDir, 0755)
 	if err != nil {
-		return fmt.Errorf("failed to create vm state dir for vm: %s", vmName)
+		return nil, fmt.Errorf("failed to create vm state dir: %w", err)
 	}
 
 	apiSocketPath := getVmSocketPath(vmStateDir, vmName)
-	go func() {
-		err := runCloudHypervisor(chvBinPath, apiSocketPath)
-		if err != nil {
-			log.WithError(err).Fatal("failed to spawn cloud-hypervisor server")
-		}
-	}()
-
 	apiClient := createApiClient(apiSocketPath)
-	err = waitForServer(context.Background(), apiClient, 10*time.Second)
+
+	logFilePath := path.Join(vmStateDir, "log")
+	logFile, err := os.Create(logFilePath)
 	if err != nil {
-		log.WithError(err).Fatal("failed to wait for cloud-hypervisor server")
+		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
 
-	// Create a new VM configuration
+	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+
+	err = cmd.Start()
+	if err != nil {
+		return nil, fmt.Errorf("error spawning vm: %w", err)
+	}
+
+	err = waitForServer(ctx, apiClient, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for vm: %w", err)
+	}
+	log.WithField("vmname", vmName).Info("chv binary spawn successful")
+
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
 			Kernel:  &kernelPath,
@@ -158,33 +175,35 @@ func createVM(ctx context.Context, vmName string) error {
 		Console: openapi.NewConsoleConfig(consolePortMode),
 		Net:     []openapi.NetConfig{{Tap: String(tapDeviceName), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
 	}
-
 	req := apiClient.DefaultAPI.CreateVM(ctx)
 	req = req.VmConfig(vmConfig)
 
 	// Execute the request
 	resp, err := req.Execute()
 	if err != nil {
-		return fmt.Errorf("failed to start VM: %w %v", err, resp.Body)
+		return nil, fmt.Errorf("failed to start VM: %w", err)
 	}
 
-	log.Infof("create resp: %v", resp)
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		return fmt.Errorf("failed to start VM. bad status: %v", resp)
+		return nil, fmt.Errorf("failed to start VM. bad status: %v", resp)
 	}
 
-	log.Infof("before bootVM")
 	resp, err = apiClient.DefaultAPI.BootVM(ctx).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to boot VM: %w %v", err, resp.Body)
+		return nil, fmt.Errorf("failed to boot VM resp.Body: %v: %w", resp.Body, err)
 	}
 
-	log.Infof("boot resp: %v", resp)
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		return fmt.Errorf("failed to boot VM. bad status: %v", resp)
+		return nil, fmt.Errorf("failed to boot VM. bad status: %v", resp)
 	}
 
-	return nil
+	return &vm{
+		name:          vmName,
+		stateDirPath:  vmStateDir,
+		apiSocketPath: apiSocketPath,
+		apiClient:     apiClient,
+		process:       cmd.Process,
+	}, nil
 }
 
 type server struct {
@@ -194,24 +213,23 @@ type server struct {
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	vmName := req.GetVmName()
 	log.WithField("vmName", vmName).Infof("received request to start VM")
-	err := createVM(ctx, vmName)
-
+	vm, err := createVM(ctx, vmName)
 	if err != nil {
+		log.Errorf("vm: %s failed to start: %v", vmName, err)
 		return nil, err
 	}
 
+	log.WithField("vmname", vm.name).Infof("vm started")
 	return &protos.VMResponse{}, nil
 }
 
 func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	log.WithField("vmName", req.GetVmName()).Infof("received request to stop VM")
-	// Implement your VM stop logic here
 	return &protos.VMResponse{}, nil
 }
 
 func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	log.WithField("vmName", req.GetVmName()).Infof("received request to destroy VM")
-	// Implement your VM destroy logic here
 	return &protos.VMResponse{}, nil
 }
 
