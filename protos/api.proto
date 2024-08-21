@@ -14,7 +14,4 @@ message VMRequest {
   string vm_name = 1;
 }
 
-message VMResponse {
-  bool success = 1;
-  string message = 2;
-}
+message VMResponse {}
