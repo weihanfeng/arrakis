@@ -15,6 +15,8 @@ import (
 	"github.com/abshkbh/chv-lambda/openapi"
 	"github.com/abshkbh/chv-lambda/out/protos"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -227,7 +229,24 @@ func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VM
 }
 
 func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
-	log.WithField("vmName", req.GetVmName()).Infof("received request to stop VM")
+	vmName := req.GetVmName()
+	log.WithField("vmName", vmName).Infof("received request to stop VM")
+
+	vm, exists := s.vms[vmName]
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "vm %s not found", vmName)
+	}
+
+	shutdown_req := vm.apiClient.DefaultAPI.ShutdownVM(ctx)
+	resp, err := shutdown_req.Execute()
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to stop VM: %v", err))
+	}
+
+	if resp.StatusCode != 200 && resp.StatusCode != 204 {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
+	}
+
 	return &protos.VMResponse{}, nil
 }
 
