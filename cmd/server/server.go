@@ -132,11 +132,11 @@ func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout ti
 	return <-errCh
 }
 
-func createVM(ctx context.Context, vmName string) (*vm, error) {
+func (s *server) createVM(ctx context.Context, vmName string) error {
 	vmStateDir := getVmStateDirPath(vmName)
 	err := os.MkdirAll(vmStateDir, 0755)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create vm state dir: %w", err)
+		return fmt.Errorf("failed to create vm state dir: %w", err)
 	}
 
 	apiSocketPath := getVmSocketPath(vmStateDir, vmName)
@@ -145,7 +145,7 @@ func createVM(ctx context.Context, vmName string) (*vm, error) {
 	logFilePath := path.Join(vmStateDir, "log")
 	logFile, err := os.Create(logFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create log file: %w", err)
+		return fmt.Errorf("failed to create log file: %w", err)
 	}
 
 	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
@@ -154,12 +154,12 @@ func createVM(ctx context.Context, vmName string) (*vm, error) {
 
 	err = cmd.Start()
 	if err != nil {
-		return nil, fmt.Errorf("error spawning vm: %w", err)
+		return fmt.Errorf("error spawning vm: %w", err)
 	}
 
 	err = waitForServer(ctx, apiClient, 10*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("error waiting for vm: %w", err)
+		return fmt.Errorf("error waiting for vm: %w", err)
 	}
 	log.WithField("vmname", vmName).Info("chv binary spawn successful")
 
@@ -181,45 +181,48 @@ func createVM(ctx context.Context, vmName string) (*vm, error) {
 	// Execute the request
 	resp, err := req.Execute()
 	if err != nil {
-		return nil, fmt.Errorf("failed to start VM: %w", err)
+		return fmt.Errorf("failed to start VM: %w", err)
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		return nil, fmt.Errorf("failed to start VM. bad status: %v", resp)
+		return fmt.Errorf("failed to start VM. bad status: %v", resp)
 	}
 
 	resp, err = apiClient.DefaultAPI.BootVM(ctx).Execute()
 	if err != nil {
-		return nil, fmt.Errorf("failed to boot VM resp.Body: %v: %w", resp.Body, err)
+		return fmt.Errorf("failed to boot VM resp.Body: %v: %w", resp.Body, err)
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		return nil, fmt.Errorf("failed to boot VM. bad status: %v", resp)
+		return fmt.Errorf("failed to boot VM. bad status: %v", resp)
 	}
 
-	return &vm{
+	vm := &vm{
 		name:          vmName,
 		stateDirPath:  vmStateDir,
 		apiSocketPath: apiSocketPath,
 		apiClient:     apiClient,
 		process:       cmd.Process,
-	}, nil
+	}
+	s.vms[vmName] = vm
+	return nil
 }
 
 type server struct {
 	protos.UnimplementedVMManagementServiceServer
+	vms map[string]*vm
 }
 
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	vmName := req.GetVmName()
 	log.WithField("vmName", vmName).Infof("received request to start VM")
-	vm, err := createVM(ctx, vmName)
+	err := s.createVM(ctx, vmName)
 	if err != nil {
 		log.Errorf("vm: %s failed to start: %v", vmName, err)
 		return nil, err
 	}
 
-	log.WithField("vmname", vm.name).Infof("vm started")
+	log.Infof("vm: %s started", vmName)
 	return &protos.VMResponse{}, nil
 }
 
@@ -244,8 +247,11 @@ func main() {
 		log.WithError(err).Fatalf("failed to listen")
 	}
 	s := grpc.NewServer()
+	apiServer := &server{
+		vms: make(map[string]*vm),
+	}
 
-	protos.RegisterVMManagementServiceServer(s, &server{})
+	protos.RegisterVMManagementServiceServer(s, apiServer)
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		log.WithError(err).Fatalf("failed to serve")
