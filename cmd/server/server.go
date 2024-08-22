@@ -218,10 +218,23 @@ type server struct {
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	vmName := req.GetVmName()
 	log.WithField("vmName", vmName).Infof("received request to start VM")
-	err := s.createVM(ctx, vmName)
-	if err != nil {
-		log.Errorf("vm: %s failed to start: %v", vmName, err)
-		return nil, err
+
+	vm, exists := s.vms[vmName]
+	if exists {
+		resp, err := vm.apiClient.DefaultAPI.BootVM(ctx).Execute()
+		if err != nil {
+			return nil, fmt.Errorf("failed to boot existing VM resp.Body: %v: %w", resp.Body, err)
+		}
+
+		if resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("failed to boot existing VM. bad status: %v", resp)
+		}
+	} else {
+		err := s.createVM(ctx, vmName)
+		if err != nil {
+			log.Errorf("vm: %s failed to start: %v", vmName, err)
+			return nil, err
+		}
 	}
 
 	log.Infof("vm: %s started", vmName)
