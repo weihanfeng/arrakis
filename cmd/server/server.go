@@ -134,6 +134,30 @@ func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout ti
 	return <-errCh
 }
 
+func reapVMProcess(vm *vm, logger *log.Entry, timeout time.Duration) error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := vm.process.Wait()
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		logger.Infof("VM process exited via wait")
+		return err
+	case <-time.After(timeout):
+		logger.Warnf("Timeout waiting for VM process to exit")
+	}
+
+	// Attempt to kill the process if it's still running. This should also
+	// trigger the wait in the goroutine preventing it's leak.
+	err := vm.process.Kill()
+	if err != nil {
+		return fmt.Errorf("failed to kill VM process: %v", err)
+	}
+	return fmt.Errorf("VM process was force killed after timeout")
+}
+
 func (s *server) createVM(ctx context.Context, vmName string) error {
 	vmStateDir := getVmStateDirPath(vmName)
 	err := os.MkdirAll(vmStateDir, 0755)
@@ -264,7 +288,56 @@ func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMR
 }
 
 func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
-	log.WithField("vmName", req.GetVmName()).Infof("received request to destroy VM")
+	vmName := req.GetVmName()
+	logger := log.WithField("vmName", vmName)
+	logger.Infof("received request to destroy VM")
+
+	vm, exists := s.vms[vmName]
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "vm %s not found", vmName)
+	}
+
+	// Shutdown for a graceful exit before full deletion. Don't error out if this fails as we still
+	// want to try a deletion after this.
+	shutdownReq := vm.apiClient.DefaultAPI.ShutdownVM(ctx)
+	resp, err := shutdownReq.Execute()
+	if err != nil {
+		logger.Warnf("failed to shutdown VM before deleting: %v", err)
+	} else if resp.StatusCode >= 300 {
+		logger.Warnf("failed to shutdown VM before deleting. bad status: %v", resp)
+	}
+
+	deleteReq := vm.apiClient.DefaultAPI.DeleteVM(ctx)
+	resp, err = deleteReq.Execute()
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to delete VM: %v", err))
+	}
+
+	if resp.StatusCode >= 300 {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
+	}
+
+	shutdownVMMReq := vm.apiClient.DefaultAPI.ShutdownVMM(ctx)
+	resp, err = shutdownVMMReq.Execute()
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM: %v", err))
+	}
+
+	if resp.StatusCode >= 300 {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM. bad status: %v", resp))
+	}
+
+	err = reapVMProcess(vm, logger, 20*time.Second)
+	if err != nil {
+		logger.Warnf("failed to reap VM process: %v", err)
+	}
+
+	// Once deleted remove its directory and remove it from the internal store of VMs.
+	err = os.RemoveAll(vm.stateDirPath)
+	if err != nil {
+		log.Warnf("Failed to delete directory %s: %v", vm.stateDirPath, err)
+	}
+	delete(s.vms, vmName)
 	return &protos.VMResponse{}, nil
 }
 
