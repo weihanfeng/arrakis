@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -29,6 +30,9 @@ const (
 	consolePortMode = "Off"
 	chvBinPath      = "/home/maverick/projects/chv-lambda/resources/bin/cloud-hypervisor"
 
+	bridgeName              = "br0"
+	bridgeIP                = "10.0.0.1/24"
+	bridgeSubnet            = "10.20.1.0/24"
 	tapDeviceName           = "tap0"
 	numNetDeviceQueues      = 2
 	netDeviceQueueSizeBytes = 256
@@ -57,6 +61,44 @@ type vm struct {
 	apiSocketPath string
 	apiClient     *openapi.APIClient
 	process       *os.Process
+}
+
+// setupBridgeAndFirewall sets up a bridge and firewall rules for the given bridge name, IP address, and subnet.
+func setupBridgeAndFirewall(backupFile string, bridgeName string, bridgeIP string, bridgeSubnet string) error {
+	// Save iptables rules
+	if err := exec.Command("iptables-save").Run(); err != nil {
+		return fmt.Errorf("failed to save iptables rules: %w", err)
+	}
+
+	// Get default network interface
+	output, err := exec.Command("sh", "-c", "ip r | grep default | awk '{print $5}'").Output()
+	if err != nil {
+		return fmt.Errorf("failed to get default network interface: %w", err)
+	}
+	hostDefaultNetworkInterface := strings.TrimSpace(string(output))
+
+	// Setup bridge and firewall rules
+	commands := []struct {
+		name string
+		args []string
+	}{
+		{"ip", []string{"l", "add", bridgeName, "type", "bridge"}},
+		{"ip", []string{"l", "set", bridgeName, "up"}},
+		{"ip", []string{"a", "add", bridgeIP, "dev", bridgeName, "scope", "host"}},
+		{"iptables", []string{"-t", "nat", "-A", "POSTROUTING", "-s", bridgeSubnet, "-o", hostDefaultNetworkInterface, "-j", "MASQUERADE"}},
+		{"sysctl", []string{"-w", fmt.Sprintf("net.ipv4.conf.%s.forwarding=1", hostDefaultNetworkInterface)}},
+		{"sysctl", []string{"-w", fmt.Sprintf("net.ipv4.conf.%s.forwarding=1", bridgeName)}},
+		{"iptables", []string{"-t", "filter", "-I", "FORWARD", "-s", bridgeSubnet, "-j", "ACCEPT"}},
+		{"iptables", []string{"-t", "filter", "-I", "FORWARD", "-d", bridgeSubnet, "-j", "ACCEPT"}},
+	}
+
+	for _, cmd := range commands {
+		if err := exec.Command(cmd.name, cmd.args...).Run(); err != nil {
+			return fmt.Errorf("failed to execute command '%s %s': %w", cmd.name, strings.Join(cmd.args, " "), err)
+		}
+	}
+
+	return nil
 }
 
 // runCloudHypervisor starts the chv binary at `chvBinPath` on the given `apiSocket`.
@@ -345,6 +387,12 @@ func main() {
 	err := os.MkdirAll(stateDir, 0755)
 	if err != nil {
 		log.WithError(err).Fatal("failed to create vm state dir")
+	}
+
+	ipBackupFile := fmt.Sprintf("iptables-backup-%s.rules", time.Now().Format(time.UnixDate))
+	err = setupBridgeAndFirewall(ipBackupFile, bridgeName, bridgeIP, bridgeSubnet)
+	if err != nil {
+		log.WithError(err).Fatal("failed to setup networking on the host")
 	}
 
 	lis, err := net.Listen("tcp", ":50051")
