@@ -11,6 +11,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN apt-get update && apt-get install -y \
     init \
     systemd \
+    ncat \
     bash \
     curl \
     wget \
@@ -52,6 +53,7 @@ RUN mkdir -p /opt/custom_scripts
 COPY check-guest-networking.sh /opt/custom_scripts/.
 COPY setup-guest-networking.sh /opt/custom_scripts/.
 COPY init.sh /opt/custom_scripts/.
+COPY vsock-test-server.py /opt/custom_scripts/.
 
 # Make sure the scripts are executable
 RUN chmod +x /opt/custom_scripts/*.sh
