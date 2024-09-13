@@ -30,5 +30,13 @@ guestinit:
 	mkdir -p $(OUT_DIR)
 	go build -o $(OUT_DIR)/chv-guestinit cmd/guestinit/guestinit.go
 
+.PHONY: guestrootfs
+guestrootfs:
+	mkdir -p $(OUT_DIR)
+	./resources/scripts/rootfs/rootfs-from-dockerfile.sh
+
+.PHONY: guest
+guest: guestinit guestrootfs
+
 .PHONY: all
-all: cli server client guestinit
+all: cli server client guestinit guestrootfs guest

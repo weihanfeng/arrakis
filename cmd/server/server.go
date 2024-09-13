@@ -22,7 +22,6 @@ import (
 )
 
 const (
-	binPath         = "/home/maverick/projects/chv-lambda/resources/bin"
 	numBootVcpus    = 1
 	memorySizeBytes = 512 * 1024 * 1024
 	// Case sensitive.
@@ -41,9 +40,9 @@ const (
 )
 
 var (
-	kernelPath    = binPath + "/compiled-vmlinux.bin"
-	rootfsPath    = binPath + "/ubuntu-ext4.img"
-	initPath      = "/usr/bin/tini -- echo $PATH"
+	kernelPath    = "resources/bin/compiled-vmlinux.bin"
+	rootfsPath    = "out/ubuntu-ext4.img"
+	initPath      = "/usr/bin/tini -- /bin/bash"
 	kernelCmdline = "console=ttyS0 root=/dev/vda rw init=" + initPath
 )
 
