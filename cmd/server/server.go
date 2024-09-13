@@ -238,8 +238,8 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
-			Kernel:  &kernelPath,
-			Cmdline: &kernelCmdline,
+			Kernel:  String(kernelPath),
+			Cmdline: String(kernelCmdline),
 		},
 		Disks:   []openapi.DiskConfig{{Path: rootfsPath}},
 		Cpus:    &openapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
