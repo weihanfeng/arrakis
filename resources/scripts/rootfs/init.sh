@@ -8,4 +8,4 @@ trap "kill 0" EXIT
 
 ./opt/custom_scripts/setup-guest-networking.sh
 ./opt/custom_scripts/check-guest-networking.sh
-exec /bin/bash
+exec /usr/bin/tini -- /bin/bash

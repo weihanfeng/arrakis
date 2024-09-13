@@ -43,7 +43,7 @@ const (
 var (
 	kernelPath    = binPath + "/compiled-vmlinux.bin"
 	rootfsPath    = binPath + "/ext4.img"
-	initPath      = "/bin/bash"
+	initPath      = "/opt/custom_scripts/init.sh"
 	kernelCmdline = "console=ttyS0 root=/dev/vda rw init=" + initPath
 )
 
@@ -63,19 +63,53 @@ type vm struct {
 	process       *os.Process
 }
 
+// bridgeExists checks if a bridge with the given name exists.
+func bridgeExists(bridgeName string) (bool, error) {
+	cmd := exec.Command("ip", "link", "show", "type", "bridge")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("error executing command: %v", err)
+	}
+
+	bridges := strings.Split(string(output), "\n")
+
+	for _, bridge := range bridges {
+		if strings.Contains(bridge, bridgeName+":") {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // setupBridgeAndFirewall sets up a bridge and firewall rules for the given bridge name, IP address, and subnet.
 func setupBridgeAndFirewall(backupFile string, bridgeName string, bridgeIP string, bridgeSubnet string) error {
-	// Save iptables rules
-	if err := exec.Command("iptables-save", ">", backupFile).Run(); err != nil {
-		return fmt.Errorf("failed to save iptables rules: %w", err)
+	output, err := exec.Command("iptables-save").Output()
+	if err != nil {
+		return fmt.Errorf("failed to run iptables-save: %w", err)
+	}
+
+	err = os.WriteFile(backupFile, output, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to save iptables-save to: %v: %w", backupFile, err)
 	}
 
 	// Get default network interface
-	output, err := exec.Command("sh", "-c", "ip r | grep default | awk '{print $5}'").Output()
+	output, err = exec.Command("sh", "-c", "ip r | grep default | awk '{print $5}'").Output()
 	if err != nil {
 		return fmt.Errorf("failed to get default network interface: %w", err)
 	}
 	hostDefaultNetworkInterface := strings.TrimSpace(string(output))
+
+	exists, err := bridgeExists(bridgeName)
+	if err != nil {
+		return fmt.Errorf("failed to detect if bridge exists: %w", err)
+	}
+
+	if exists {
+		log.Info("networking already setup")
+		return nil
+	}
 
 	// Setup bridge and firewall rules
 	commands := []struct {
@@ -206,6 +240,7 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create vm state dir: %w", err)
 	}
+	log.Infof("CREATED: %v", vmStateDir)
 
 	apiSocketPath := getVmSocketPath(vmStateDir, vmName)
 	apiClient := createApiClient(apiSocketPath)
