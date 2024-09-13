@@ -83,6 +83,14 @@ func main() {
 			{
 				Name:  "stop",
 				Usage: "Stop a VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM to stop",
+						Required: true,
+					},
+				},
 				Action: func(ctx *cli.Context) error {
 					return manageVM(ctx, "stop", ctx.String("name"))
 				},
@@ -90,6 +98,14 @@ func main() {
 			{
 				Name:  "destroy",
 				Usage: "Destroy a VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM to destroy",
+						Required: true,
+					},
+				},
 				Action: func(ctx *cli.Context) error {
 					return manageVM(ctx, "destroy", ctx.String("name"))
 				},

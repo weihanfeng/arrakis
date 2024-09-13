@@ -42,8 +42,8 @@ const (
 
 var (
 	kernelPath    = binPath + "/compiled-vmlinux.bin"
-	rootfsPath    = binPath + "/ext4.img"
-	initPath      = "/opt/custom_scripts/init.sh"
+	rootfsPath    = binPath + "/ubuntu-ext4.img"
+	initPath      = "/usr/bin/tini -- /bin/bash"
 	kernelCmdline = "console=ttyS0 root=/dev/vda rw init=" + initPath
 )
 
@@ -430,7 +430,7 @@ func main() {
 		log.WithError(err).Fatal("failed to create vm state dir")
 	}
 
-	ipBackupFile := fmt.Sprintf("iptables-backup-%s.rules", time.Now().Format(time.UnixDate))
+	ipBackupFile := fmt.Sprintf("/tmp/iptables-backup-%s.rules", time.Now().Format(time.UnixDate))
 	err = setupBridgeAndFirewall(ipBackupFile, bridgeName, bridgeIP, bridgeSubnet)
 	if err != nil {
 		log.WithError(err).Fatal("failed to setup networking on the host")
