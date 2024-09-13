@@ -66,7 +66,7 @@ type vm struct {
 // setupBridgeAndFirewall sets up a bridge and firewall rules for the given bridge name, IP address, and subnet.
 func setupBridgeAndFirewall(backupFile string, bridgeName string, bridgeIP string, bridgeSubnet string) error {
 	// Save iptables rules
-	if err := exec.Command("iptables-save").Run(); err != nil {
+	if err := exec.Command("iptables-save", ">", backupFile).Run(); err != nil {
 		return fmt.Errorf("failed to save iptables rules: %w", err)
 	}
 
