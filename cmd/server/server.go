@@ -251,7 +251,7 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 		return fmt.Errorf("failed to create log file: %w", err)
 	}
 
-	tapDevice, err := s.fountain.CreateTapDevice()
+	tapDevice, err := s.fountain.CreateTapDevice(vmName)
 	if err != nil {
 		return fmt.Errorf("failed to create tap device: %w", err)
 	}
