@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -13,7 +15,34 @@ const (
 	ifname    = "eth0"
 )
 
+func mount(source, target, fsType string, flags uintptr) error {
+	if _, err := os.Stat(target); os.IsNotExist(err) {
+		err := os.MkdirAll(target, 0755)
+		if err != nil {
+			return fmt.Errorf("error creating: %s: %w", target, err)
+		}
+	}
+
+	err := syscall.Mount(source, target, fsType, flags, "")
+	if err != nil {
+		return fmt.Errorf("error mounting %s to %s, error: %w", source, target, err)
+	}
+
+	return nil
+}
+
 func main() {
+	log.Infof("guestinit PATH: %s", os.Getenv("PATH"))
+
+	// Setup essential mounts.
+	mount("none", "/proc", "proc", 0)
+	mount("none", "/dev/pts", "devpts", 0)
+	mount("none", "/dev/mqueue", "mqueue", 0)
+	mount("none", "/dev/shm", "tmpfs", 0)
+	mount("none", "/sys", "sysfs", 0)
+	mount("none", "/sys/fs/cgroup", "cgroup", 0)
+
+	// Setup networking.
 	cmd := exec.Command("ip", "a", "add", guestIP, "dev", ifname)
 	err := cmd.Run()
 	if err != nil {
