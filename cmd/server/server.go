@@ -13,6 +13,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/abshkbh/chv-lambda/cmd/server/fountain"
 	"github.com/abshkbh/chv-lambda/openapi"
 	"github.com/abshkbh/chv-lambda/out/protos"
 	"google.golang.org/grpc"
@@ -33,7 +34,6 @@ const (
 	bridgeName              = "br0"
 	bridgeIP                = "10.0.0.1/24"
 	bridgeSubnet            = "10.20.1.0/24"
-	tapDeviceName           = "tap0"
 	numNetDeviceQueues      = 2
 	netDeviceQueueSizeBytes = 256
 	netDeviceId             = "_net0"
@@ -216,6 +216,11 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 		return fmt.Errorf("failed to create log file: %w", err)
 	}
 
+	tapDevice, err := s.fountain.CreateTapDevice()
+	if err != nil {
+		return fmt.Errorf("failed to create tap device: %w", err)
+	}
+
 	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -241,7 +246,7 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 		Memory:  &openapi.MemoryConfig{Size: memorySizeBytes},
 		Serial:  openapi.NewConsoleConfig(serialPortMode),
 		Console: openapi.NewConsoleConfig(consolePortMode),
-		Net:     []openapi.NetConfig{{Tap: String(tapDeviceName), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
+		Net:     []openapi.NetConfig{{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
 	}
 	req := apiClient.DefaultAPI.CreateVM(ctx)
 	req = req.VmConfig(vmConfig)
@@ -278,7 +283,8 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 
 type server struct {
 	protos.UnimplementedVMManagementServiceServer
-	vms map[string]*vm
+	vms      map[string]*vm
+	fountain *fountain.Fountain
 }
 
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
@@ -401,7 +407,8 @@ func main() {
 	}
 	s := grpc.NewServer()
 	apiServer := &server{
-		vms: make(map[string]*vm),
+		vms:      make(map[string]*vm),
+		fountain: fountain.NewFountain(bridgeName),
 	}
 
 	protos.RegisterVMManagementServiceServer(s, apiServer)

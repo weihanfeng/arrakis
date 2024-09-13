@@ -6,15 +6,15 @@ import (
 )
 
 type Fountain struct {
-	subnet string
-	nextId int32
+	bridgeDevice string
+	nextId       int32
 }
 
-func NewFountain(subnet string) *Fountain {
-	return &Fountain{subnet: subnet}
+func NewFountain(bridgeDevice string) *Fountain {
+	return &Fountain{bridgeDevice: bridgeDevice}
 }
 
-func (f *Fountain) CreateTapDevice(bridgeDeviceName string) (retTapDeviceName string, retErr error) {
+func (f *Fountain) CreateTapDevice() (retTapDevice string, retErr error) {
 	defer func() {
 		// TODO: Undo the ip commands if we fail any of the tap operations.
 		if retErr != nil {
@@ -22,18 +22,18 @@ func (f *Fountain) CreateTapDevice(bridgeDeviceName string) (retTapDeviceName st
 		}
 	}()
 
-	tapDeviceName := fmt.Sprintf("tap%d", f.nextId)
-	if err := exec.Command("ip", "tuntap", "add", "dev", tapDeviceName, "mode", "tap").Run(); err != nil {
-		return "", fmt.Errorf("failed to create: %v: %w", tapDeviceName, err)
+	tapDevice := fmt.Sprintf("tap%d", f.nextId)
+	if err := exec.Command("ip", "tuntap", "add", "dev", tapDevice, "mode", "tap").Run(); err != nil {
+		return "", fmt.Errorf("failed to create: %v: %w", tapDevice, err)
 	}
 
-	if err := exec.Command("ip", "l", "set", "dev", tapDeviceName, "master", bridgeDeviceName).Run(); err != nil {
-		return "", fmt.Errorf("failed to add: %v to: %v: %w", tapDeviceName, bridgeDeviceName, err)
+	if err := exec.Command("ip", "l", "set", "dev", tapDevice, "master", f.bridgeDevice).Run(); err != nil {
+		return "", fmt.Errorf("failed to add: %v to: %v: %w", tapDevice, f.bridgeDevice, err)
 	}
 
-	if err := exec.Command("ip", "l", "set", tapDeviceName, "up").Run(); err != nil {
-		return "", fmt.Errorf("failed to up: %v: %w", tapDeviceName, err)
+	if err := exec.Command("ip", "l", "set", tapDevice, "up").Run(); err != nil {
+		return "", fmt.Errorf("failed to up: %v: %w", tapDevice, err)
 	}
 
-	return tapDeviceName, nil
+	return tapDevice, nil
 }
