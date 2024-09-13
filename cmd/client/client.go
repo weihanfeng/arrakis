@@ -22,7 +22,7 @@ func manageVM(c *cli.Context, action string) error {
 	if c.NArg() < 1 {
 		return fmt.Errorf("VM name is required")
 	}
-	vmName := c.Args().Get(0)
+	vmName := c.String("name")
 	serverAddr := c.String("server")
 
 	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -72,8 +72,8 @@ func main() {
 			{
 				Name:  "start",
 				Usage: "Start a VM",
-				Action: func(c *cli.Context) error {
-					return manageVM(c, "start")
+				Action: func(ctx *cli.Context) error {
+					return manageVM(ctx, "start")
 				},
 			},
 			{
