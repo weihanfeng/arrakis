@@ -43,7 +43,7 @@ const (
 var (
 	kernelPath    = binPath + "/compiled-vmlinux.bin"
 	rootfsPath    = binPath + "/ubuntu-ext4.img"
-	initPath      = "/usr/bin/tini -- /bin/bash"
+	initPath      = "/usr/bin/tini -- echo $PATH"
 	kernelCmdline = "console=ttyS0 root=/dev/vda rw init=" + initPath
 )
 

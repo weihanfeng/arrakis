@@ -25,5 +25,10 @@ protos:
 clean:
 	rm -rf $(OUT_DIR)
 
+.PHONY: guestinit
+guestinit:
+	mkdir -p $(OUT_DIR)
+	go build -o $(OUT_DIR)/chv-guestinit cmd/guestinit/guestinit.go
+
 .PHONY: all
-all: clean cli server client
+all: cli server client guestinit

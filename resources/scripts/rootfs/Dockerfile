@@ -7,6 +7,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Modify PATH to include /usr/sbin
+RUN echo $PATH
+
 # Update and install common utilities
 RUN apt-get update && apt-get install -y \
     init \
@@ -50,6 +53,7 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /opt/custom_scripts
 
 # Copy your custom scripts into the image
+COPY chv-guestinit /opt/custom_scripts/guestinit
 COPY check-guest-networking.sh /opt/custom_scripts/.
 COPY setup-guest-networking.sh /opt/custom_scripts/.
 COPY init.sh /opt/custom_scripts/.
