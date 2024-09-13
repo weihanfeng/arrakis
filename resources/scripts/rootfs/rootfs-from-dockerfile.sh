@@ -40,8 +40,7 @@ docker create --name ${DOCKER_CONTAINER_NAME} ${DOCKER_IMAGE_NAME}
 docker export ${DOCKER_CONTAINER_NAME} | gzip > "${ROOTFS_TAR}"
 docker rm ${DOCKER_CONTAINER_NAME}
 
-dd if=/dev/zero of=${ROOTFS_EXT4_IMAGE} bs=1M count=1024
-mkfs.ext4 ${ROOTFS_EXT4_IMAGE}
 mkdir -p ${ROOTFS_DIR}
 tar -xzvf "${ROOTFS_TAR}" -C ${ROOTFS_DIR}
-e2cp -ap -G ${ROOTFS_DIR}/* ${ROOTFS_EXT4_IMAGE}:/
+dd if=/dev/zero of=${ROOTFS_EXT4_IMAGE} bs=1M count=1024
+mkfs.ext4 -d ${ROOTFS_DIR} ${ROOTFS_EXT4_IMAGE}
