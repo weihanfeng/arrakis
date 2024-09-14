@@ -18,6 +18,26 @@ const (
 	bashBin   = "/bin/bash"
 )
 
+func startSshServerInBg() error {
+	// Needed to start sshd.
+	err := os.MkdirAll("/run/sshd", 0755)
+	if err != nil {
+		return fmt.Errorf("error creating /run/sshd: %w", err)
+	}
+
+	cmd := exec.Command("/usr/sbin/sshd", "-ddd")
+	err = cmd.Start()
+	if err != nil {
+		return fmt.Errorf("error starting sshd: %w", err)
+	}
+
+	err = cmd.Wait()
+	if err != nil {
+		return fmt.Errorf("error waiting for sshd: %w", err)
+	}
+	return nil
+}
+
 func mount(source, target, fsType string, flags uintptr) error {
 	if _, err := os.Stat(target); os.IsNotExist(err) {
 		err := os.MkdirAll(target, 0755)
@@ -73,6 +93,12 @@ func main() {
 	_, err = f.WriteString("nameserver 8.8.8.8\n")
 	if err != nil {
 		log.WithError(err).Fatal("failed to write nameserver to /etc/resolv.conf")
+	}
+
+	// TODO: Get the cmd.pid and reap it in the end.
+	err = startSshServerInBg()
+	if err != nil {
+		log.WithError(err).Fatal("failed to start ssh server")
 	}
 
 	log.Infof("starting %s", bashBin)
