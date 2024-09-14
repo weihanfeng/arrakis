@@ -31,7 +31,7 @@ const (
 	chvBinPath      = "/home/maverick/projects/chv-lambda/resources/bin/cloud-hypervisor"
 
 	bridgeName              = "br0"
-	bridgeIP                = "10.0.0.1/24"
+	bridgeIP                = "10.20.1.1/24"
 	bridgeSubnet            = "10.20.1.0/24"
 	numNetDeviceQueues      = 2
 	netDeviceQueueSizeBytes = 256
@@ -42,7 +42,7 @@ const (
 var (
 	kernelPath    = "resources/bin/compiled-vmlinux.bin"
 	rootfsPath    = "out/ubuntu-ext4.img"
-	initPath      = "/usr/bin/tini -- /bin/bash"
+	initPath      = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
 	kernelCmdline = "console=ttyS0 root=/dev/vda rw init=" + initPath
 )
 

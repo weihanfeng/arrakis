@@ -57,4 +57,4 @@ COPY resources/scripts/rootfs/init.sh /opt/custom_scripts/.
 COPY resources/scripts/rootfs/vsock-test-server.py /opt/custom_scripts/.
 
 # Make sure the scripts are executable
-RUN chmod +x /opt/custom_scripts/*.sh
+RUN chmod +x /opt/custom_scripts/*
