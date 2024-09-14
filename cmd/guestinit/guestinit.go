@@ -26,15 +26,13 @@ func startSshServerInBg() error {
 	}
 
 	cmd := exec.Command("/usr/sbin/sshd", "-ddd")
-	err = cmd.Start()
-	if err != nil {
-		return fmt.Errorf("error starting sshd: %w", err)
-	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	err = cmd.Wait()
-	if err != nil {
-		return fmt.Errorf("error waiting for sshd: %w", err)
-	}
+	// TODO: Not the right way to do this.
+	go func() {
+		cmd.Start()
+	}()
 	return nil
 }
 

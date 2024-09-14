@@ -3,6 +3,12 @@ FROM ubuntu:20.04
 # Avoid prompts from apt
 ENV DEBIAN_FRONTEND=noninteractive
 
+ARG USERNAME=maverick
+ARG PASSWORD=test0000
+RUN useradd -m $USERNAME && \
+    echo "$USERNAME:$PASSWORD" | chpasswd && \
+    adduser $USERNAME sudo
+
 # Set timezone
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
