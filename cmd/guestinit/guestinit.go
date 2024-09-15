@@ -56,7 +56,7 @@ func startSshServerInBg() (*exec.Cmd, error) {
 		return nil, fmt.Errorf("error creating /run/sshd: %w", err)
 	}
 
-	cmd := exec.Command("/usr/sbin/sshd", "-ddd")
+	cmd := exec.Command("/usr/sbin/sshd")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
