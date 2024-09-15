@@ -84,7 +84,7 @@ func mount(source, target, fsType string, flags uintptr) error {
 }
 
 func main() {
-	log.Infof("Starting guestinit")
+	log.Infof("starting guestinit")
 
 	// Setup essential mounts.
 	mount("none", "/proc", "proc", 0)
@@ -94,15 +94,13 @@ func main() {
 	mount("none", "/sys", "sysfs", 0)
 	mount("none", "/sys/fs/cgroup", "cgroup", 0)
 
-	// Parse /proc/cmdline to get "gatewayIP" and "guest_ip".
-	gatewayIP, guestIP, err := parseNetworkingMetadata()
+	guestCIDR, gatewayIP, err := parseNetworkingMetadata()
 	if err != nil {
-		log.WithError(err).Fatal("failed to parse guest ip")
+		log.WithError(err).Fatal("failed to parse guest networking metadata")
 	}
-	log.Infof("gatewayIP=%s guestIP=%s", gatewayIP, guestIP)
 
 	// Setup networking.
-	cmd := exec.Command(ipBin, "a", "add", guestIP, "dev", ifname)
+	cmd := exec.Command(ipBin, "a", "add", guestCIDR, "dev", ifname)
 	err = cmd.Run()
 	if err != nil {
 		log.WithError(err).Fatal("failed to add IP address to interface")

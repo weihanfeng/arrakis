@@ -25,10 +25,12 @@ protos:
 clean:
 	rm -rf $(OUT_DIR)
 
+# Build the guest init binary explicitly statically if "os" or "net" are used by
+# using the CGO_ENABLED=0 flag.
 .PHONY: guestinit
 guestinit:
 	mkdir -p $(OUT_DIR)
-	go build -o $(OUT_DIR)/chv-guestinit cmd/guestinit/guestinit.go
+	CGO_ENABLED=0 go build -o $(OUT_DIR)/chv-guestinit cmd/guestinit/guestinit.go
 
 .PHONY: guestrootfs
 guestrootfs:
