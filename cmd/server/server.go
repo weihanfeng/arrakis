@@ -60,6 +60,7 @@ type vm struct {
 	apiSocketPath string
 	apiClient     *openapi.APIClient
 	process       *os.Process
+	ip            *net.IPNet
 }
 
 func getKernelCmdLine(gatewayIP string, guestIP string) string {
@@ -309,6 +310,7 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 		apiSocketPath: apiSocketPath,
 		apiClient:     apiClient,
 		process:       cmd.Process,
+		ip:            guestIP,
 	}
 	s.vms[vmName] = vm
 	return nil
@@ -418,6 +420,11 @@ func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.
 	err = os.RemoveAll(vm.stateDirPath)
 	if err != nil {
 		log.Warnf("Failed to delete directory %s: %v", vm.stateDirPath, err)
+	}
+
+	err = s.ipAllocator.FreeIP(vm.ip.IP)
+	if err != nil {
+		log.Warnf("failed to free IP: %s: %v", vm.ip.IP.String(), err)
 	}
 	delete(s.vms, vmName)
 	return &protos.VMResponse{}, nil
