@@ -422,6 +422,11 @@ func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.
 		log.Warnf("Failed to delete directory %s: %v", vm.stateDirPath, err)
 	}
 
+	err = s.fountain.DestroyTapDevice(vmName)
+	if err != nil {
+		log.Warnf("failed to destroy the tap device for vm: %s: %v", vmName, err)
+	}
+
 	err = s.ipAllocator.FreeIP(vm.ip.IP)
 	if err != nil {
 		log.Warnf("failed to free IP: %s: %v", vm.ip.IP.String(), err)
