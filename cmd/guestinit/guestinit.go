@@ -49,22 +49,22 @@ func parseNetworkingMetadata() (string, string, error) {
 	return guestCIDR, gatewayIP.String(), nil
 }
 
-func startSshServerInBg() error {
+func startSshServerInBg() (*exec.Cmd, error) {
 	// Needed to start sshd.
 	err := os.MkdirAll("/run/sshd", 0755)
 	if err != nil {
-		return fmt.Errorf("error creating /run/sshd: %w", err)
+		return nil, fmt.Errorf("error creating /run/sshd: %w", err)
 	}
 
 	cmd := exec.Command("/usr/sbin/sshd", "-ddd")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// TODO: Not the right way to do this.
-	go func() {
-		cmd.Start()
-	}()
-	return nil
+	err = cmd.Start()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start sshd: %w", err)
+	}
+	return cmd, nil
 }
 
 func mount(source, target, fsType string, flags uintptr) error {
@@ -129,11 +129,12 @@ func main() {
 		log.WithError(err).Fatal("failed to write nameserver to /etc/resolv.conf")
 	}
 
-	// TODO: Get the cmd.pid and reap it in the end.
-	err = startSshServerInBg()
+	// TODO: Reap ssh process in the end.
+	cmd, err = startSshServerInBg()
 	if err != nil {
 		log.WithError(err).Fatal("failed to start ssh server")
 	}
+	log.Infof("started sshd with PID: %d", cmd.Process.Pid)
 
 	log.Infof("starting %s", bashBin)
 
