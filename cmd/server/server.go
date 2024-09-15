@@ -143,22 +143,6 @@ func setupBridgeAndFirewall(backupFile string, bridgeName string, bridgeIP strin
 	return nil
 }
 
-// runCloudHypervisor starts the chv binary at `chvBinPath` on the given `apiSocket`.
-func runCloudHypervisor(chvBinPath string, apiSocketPath string) error {
-	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
-	cmd.Stdout = log.StandardLogger().Writer()
-	cmd.Stderr = log.StandardLogger().Writer()
-
-	// Run the command
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("error spawning chv binary: %w", err)
-	}
-
-	log.Println("Spawn successful")
-	return nil
-}
-
 func getVmStateDirPath(vmName string) string {
 	return path.Join(stateDir, vmName)
 }
