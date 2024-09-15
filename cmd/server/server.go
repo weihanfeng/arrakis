@@ -14,6 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/abshkbh/chv-lambda/cmd/server/fountain"
+	"github.com/abshkbh/chv-lambda/cmd/server/ipallocator"
 	"github.com/abshkbh/chv-lambda/openapi"
 	"github.com/abshkbh/chv-lambda/out/protos"
 	"google.golang.org/grpc"
@@ -40,10 +41,9 @@ const (
 )
 
 var (
-	kernelPath    = "resources/bin/compiled-vmlinux.bin"
-	rootfsPath    = "out/ubuntu-ext4.img"
-	initPath      = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
-	kernelCmdline = "console=ttyS0 root=/dev/vda rw init=" + initPath
+	kernelPath = "resources/bin/compiled-vmlinux.bin"
+	rootfsPath = "out/ubuntu-ext4.img"
+	initPath   = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
 )
 
 func String(s string) *string {
@@ -60,6 +60,15 @@ type vm struct {
 	apiSocketPath string
 	apiClient     *openapi.APIClient
 	process       *os.Process
+}
+
+func getKernelCmdLine(gatewayIP string, guestIP string) string {
+	return fmt.Sprintf(
+		"console=ttyS0 gateway_ip=%s guest_ip=%s root=/dev/vda rw init=%s",
+		gatewayIP,
+		guestIP,
+		initPath,
+	)
 }
 
 // bridgeExists checks if a bridge with the given name exists.
@@ -270,10 +279,16 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 	}
 	log.WithField("vmname", vmName).Info("chv binary spawn successful")
 
+	guestIP, err := s.ipAllocator.AllocateIP()
+	if err != nil {
+		return fmt.Errorf("error allocating guest ip: %w", err)
+	}
+	log.Infof("Allocated IP: %v", guestIP)
+
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
 			Kernel:  String(kernelPath),
-			Cmdline: String(kernelCmdline),
+			Cmdline: String(getKernelCmdLine(bridgeIP, guestIP.String())),
 		},
 		Disks:   []openapi.DiskConfig{{Path: rootfsPath}},
 		Cpus:    &openapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
@@ -317,8 +332,9 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 
 type server struct {
 	protos.UnimplementedVMManagementServiceServer
-	vms      map[string]*vm
-	fountain *fountain.Fountain
+	vms         map[string]*vm
+	fountain    *fountain.Fountain
+	ipAllocator *ipallocator.IPAllocator
 }
 
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
@@ -439,10 +455,16 @@ func main() {
 	if err != nil {
 		log.WithError(err).Fatalf("failed to listen")
 	}
+
+	ipAllocator, err := ipallocator.NewIPAllocator(bridgeSubnet)
+	if err != nil {
+		log.WithError(err).Fatalf("failed to create ip allocator")
+	}
 	s := grpc.NewServer()
 	apiServer := &server{
-		vms:      make(map[string]*vm),
-		fountain: fountain.NewFountain(bridgeName),
+		vms:         make(map[string]*vm),
+		fountain:    fountain.NewFountain(bridgeName),
+		ipAllocator: ipAllocator,
 	}
 
 	protos.RegisterVMManagementServiceServer(s, apiServer)

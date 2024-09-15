@@ -2,21 +2,52 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	guestIP   = "10.20.1.2/24"
-	gatewayIP = "10.20.1.1"
-	ifname    = "eth0"
-	ipBin     = "/usr/bin/ip"
-	paths     = "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
-	bashBin   = "/bin/bash"
+	ifname  = "eth0"
+	ipBin   = "/usr/bin/ip"
+	paths   = "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+	bashBin = "/bin/bash"
 )
+
+// parseNetworkingMetadata parses the networking metadata from the kernel command line.
+func parseNetworkingMetadata() (string, string, error) {
+	cmdline, err := os.ReadFile("/proc/cmdline")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read /proc/cmdline: %w", err)
+	}
+
+	params := strings.Fields(string(cmdline))
+	var guestCIDR, gatewayCIDR string
+
+	for _, param := range params {
+		if strings.HasPrefix(param, "guest_ip=") {
+			guestCIDR = strings.TrimPrefix(param, "guest_ip=")
+		} else if strings.HasPrefix(param, "gateway_ip=") {
+			gatewayCIDR = strings.TrimPrefix(param, "gateway_ip=")
+		}
+	}
+
+	if guestCIDR == "" || gatewayCIDR == "" {
+		return "", "", fmt.Errorf("guest_ip or gateway_ip not found in kernel command line")
+	}
+
+	// gateway's IP needs to be returned without the subnet mask.
+	gatewayIP, _, err := net.ParseCIDR(gatewayCIDR)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse gatewayCIDR: %w", err)
+	}
+
+	return guestCIDR, gatewayIP.String(), nil
+}
 
 func startSshServerInBg() error {
 	// Needed to start sshd.
@@ -53,7 +84,7 @@ func mount(source, target, fsType string, flags uintptr) error {
 }
 
 func main() {
-	log.Infof("guestinit PATH: %s", os.Getenv("PATH"))
+	log.Infof("Starting guestinit")
 
 	// Setup essential mounts.
 	mount("none", "/proc", "proc", 0)
@@ -63,9 +94,16 @@ func main() {
 	mount("none", "/sys", "sysfs", 0)
 	mount("none", "/sys/fs/cgroup", "cgroup", 0)
 
+	// Parse /proc/cmdline to get "gatewayIP" and "guest_ip".
+	gatewayIP, guestIP, err := parseNetworkingMetadata()
+	if err != nil {
+		log.WithError(err).Fatal("failed to parse guest ip")
+	}
+	log.Infof("gatewayIP=%s guestIP=%s", gatewayIP, guestIP)
+
 	// Setup networking.
 	cmd := exec.Command(ipBin, "a", "add", guestIP, "dev", ifname)
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		log.WithError(err).Fatal("failed to add IP address to interface")
 	}
