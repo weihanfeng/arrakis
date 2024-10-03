@@ -51,6 +51,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Add any additional configurations or packages here
+# TODO: Adding packages above rebuilds everything as its in one layer. Split them out and keep
+# appending.
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
+RUN . ~/.nvm/nvm.sh && nvm install 22
 
 # Create a directory for your custom scripts
 RUN mkdir -p /opt/custom_scripts
@@ -61,6 +65,7 @@ COPY resources/scripts/rootfs/check-guest-networking.sh /opt/custom_scripts/.
 COPY resources/scripts/rootfs/setup-guest-networking.sh /opt/custom_scripts/.
 COPY resources/scripts/rootfs/init.sh /opt/custom_scripts/.
 COPY resources/scripts/rootfs/vsock-test-server.py /opt/custom_scripts/.
+COPY resources/scripts/rootfs/server.js /opt/custom_scripts/.
 
 # Make sure the scripts are executable
 RUN chmod +x /opt/custom_scripts/*

@@ -63,11 +63,12 @@ type vm struct {
 	ip            *net.IPNet
 }
 
-func getKernelCmdLine(gatewayIP string, guestIP string) string {
+func getKernelCmdLine(gatewayIP string, guestIP string, langType string) string {
 	return fmt.Sprintf(
-		"console=ttyS0 gateway_ip=%s guest_ip=%s root=/dev/vda rw init=%s",
+		"console=ttyS0 gateway_ip=%s guest_ip=%s root=/dev/vda rw lang_type=%s init=%s",
 		gatewayIP,
 		guestIP,
+		langType,
 		initPath,
 	)
 }
@@ -227,7 +228,7 @@ func reapVMProcess(vm *vm, logger *log.Entry, timeout time.Duration) error {
 	return fmt.Errorf("VM process was force killed after timeout")
 }
 
-func (s *server) createVM(ctx context.Context, vmName string) error {
+func (s *server) createVM(ctx context.Context, vmName string, langType string) error {
 	vmStateDir := getVmStateDirPath(vmName)
 	err := os.MkdirAll(vmStateDir, 0755)
 	if err != nil {
@@ -273,7 +274,7 @@ func (s *server) createVM(ctx context.Context, vmName string) error {
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
 			Kernel:  String(kernelPath),
-			Cmdline: String(getKernelCmdLine(bridgeIP, guestIP.String())),
+			Cmdline: String(getKernelCmdLine(bridgeIP, guestIP.String(), langType)),
 		},
 		Disks:   []openapi.DiskConfig{{Path: rootfsPath}},
 		Cpus:    &openapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
@@ -325,6 +326,7 @@ type server struct {
 
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	vmName := req.GetVmName()
+	langType := req.GetLangType()
 	log.WithField("vmName", vmName).Infof("received request to start VM")
 
 	vm, exists := s.vms[vmName]
@@ -338,7 +340,7 @@ func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VM
 			return nil, fmt.Errorf("failed to boot existing VM. bad status: %v", resp)
 		}
 	} else {
-		err := s.createVM(ctx, vmName)
+		err := s.createVM(ctx, vmName, langType)
 		if err != nil {
 			log.Errorf("vm: %s failed to start: %v", vmName, err)
 			return nil, err

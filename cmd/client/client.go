@@ -18,12 +18,10 @@ const (
 	defaultServerAddress = "localhost:50051"
 )
 
-func manageVM(c *cli.Context, action string, vmName string) error {
-	serverAddr := c.String("server")
-
+func stopVM(serverAddr string, vmName string) error {
 	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return fmt.Errorf("failed to connect: %v", err)
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 	defer conn.Close()
 
@@ -31,24 +29,55 @@ func manageVM(c *cli.Context, action string, vmName string) error {
 	ctx := context.Background()
 
 	request := &pb.VMRequest{VmName: vmName}
-	var actionErr error
-
-	switch action {
-	case "start":
-		_, actionErr = client.StartVM(ctx, request)
-	case "stop":
-		_, actionErr = client.StopVM(ctx, request)
-	case "destroy":
-		_, actionErr = client.DestroyVM(ctx, request)
-	default:
-		return fmt.Errorf("unknown action: %s", action)
+	_, err = client.StopVM(ctx, request)
+	if err != nil {
+		return fmt.Errorf("error stopping: %w", err)
 	}
 
-	if actionErr != nil {
-		return fmt.Errorf("error performing %s action: %v", action, actionErr)
+	log.Infof("Successfully stopped VM: %s", vmName)
+	return nil
+}
+
+func destroyVM(serverAddr string, vmName string) error {
+	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewVMManagementServiceClient(conn)
+	ctx := context.Background()
+
+	request := &pb.VMRequest{VmName: vmName}
+	_, err = client.DestroyVM(ctx, request)
+	if err != nil {
+		return fmt.Errorf("error destroying: %w", err)
 	}
 
-	log.Infof("Successfully %sed VM: %s\n", action, vmName)
+	log.Infof("Successfully destroyed VM: %s", vmName)
+	return nil
+}
+
+func startVM(serverAddr string, vmName string, langType string) error {
+	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewVMManagementServiceClient(conn)
+	ctx := context.Background()
+
+	request := &pb.VMRequest{
+		VmName:   vmName,
+		LangType: langType,
+	}
+	_, err = client.StartVM(ctx, request)
+	if err != nil {
+		return fmt.Errorf("error starting: %w", err)
+	}
+
+	log.Infof("Successfully started VM: %s", vmName)
 	return nil
 }
 
@@ -75,9 +104,15 @@ func main() {
 						Usage:    "Name of the VM to create",
 						Required: true,
 					},
+					&cli.StringFlag{
+						Name:     "lang-type",
+						Aliases:  []string{"lt"},
+						Usage:    "If required, the language to support inside the server",
+						Required: true,
+					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return manageVM(ctx, "start", ctx.String("name"))
+					return startVM(ctx.String("server"), ctx.String("name"), ctx.String("lang-type"))
 				},
 			},
 			{
@@ -92,7 +127,7 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return manageVM(ctx, "stop", ctx.String("name"))
+					return stopVM(ctx.String("server"), ctx.String("name"))
 				},
 			},
 			{
@@ -107,7 +142,7 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return manageVM(ctx, "destroy", ctx.String("name"))
+					return destroyVM(ctx.String("server"), ctx.String("name"))
 				},
 			},
 		},

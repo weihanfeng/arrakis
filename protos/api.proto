@@ -12,6 +12,8 @@ service VMManagementService {
 
 message VMRequest {
   string vm_name = 1;
+  string lang_type = 2;
+  // Next Id: 3.
 }
 
 message VMResponse {}

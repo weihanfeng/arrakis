@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -47,6 +48,40 @@ func parseNetworkingMetadata() (string, string, error) {
 	}
 
 	return guestCIDR, gatewayIP.String(), nil
+}
+
+// parseLangTypeMetadata parses the language type metadata from the kernel command line.
+func parseLangTypeMetadata() (string, error) {
+	cmdline, err := os.ReadFile("/proc/cmdline")
+	if err != nil {
+		return "", fmt.Errorf("failed to read /proc/cmdline: %w", err)
+	}
+
+	params := strings.Fields(string(cmdline))
+	prefix_to_find := "lang_type="
+	for _, param := range params {
+		if strings.HasPrefix(param, prefix_to_find) {
+			return strings.TrimPrefix(param, prefix_to_find), nil
+		}
+	}
+
+	return "", fmt.Errorf("failed to parse lang_type: %w", err)
+}
+
+func startLangServerInBg(langType string) (*exec.Cmd, error) {
+	if langType != "node" {
+		return nil, fmt.Errorf("only node is supported got lang type: %s", langType)
+	}
+
+	cmd := exec.Command("/usr/bin/versions/node/v22.9.0/bin/node", "/opt/custom_scripts/server.js")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Start()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start lang server: %w", err)
+	}
+	return cmd, nil
 }
 
 func startSshServerInBg() (*exec.Cmd, error) {
@@ -100,7 +135,13 @@ func main() {
 	}
 
 	// Setup networking.
-	cmd := exec.Command(ipBin, "a", "add", guestCIDR, "dev", ifname)
+	cmd := exec.Command(ipBin, "l", "set", "lo", "up")
+	err = cmd.Run()
+	if err != nil {
+		log.WithError(err).Fatal("failed to set the lo interface up")
+	}
+
+	cmd = exec.Command(ipBin, "a", "add", guestCIDR, "dev", ifname)
 	err = cmd.Run()
 	if err != nil {
 		log.WithError(err).Fatal("failed to add IP address to interface")
@@ -129,7 +170,21 @@ func main() {
 		log.WithError(err).Fatal("failed to write nameserver to /etc/resolv.conf")
 	}
 
-	// TODO: Reap ssh process in the end.
+	lang_type, err := parseLangTypeMetadata()
+	if err != nil {
+		log.WithError(err).Fatal("failed to parse lang_type")
+	}
+
+	var auxProcesses []*exec.Cmd
+	if lang_type != "" {
+		log.Infof("starting lang server with lang type: %s", lang_type)
+		cmd, err := startLangServerInBg(lang_type)
+		if err != nil {
+			log.WithError(err).Fatal("failed to start lang server")
+		}
+		auxProcesses = append(auxProcesses, cmd)
+	}
+
 	cmd, err = startSshServerInBg()
 	if err != nil {
 		log.WithError(err).Fatal("failed to start ssh server")
@@ -153,4 +208,15 @@ func main() {
 	if err != nil {
 		log.WithError(err).Fatalf("failed to wait for: %s", bashBin)
 	}
+
+	// After the ssh server is done. Reap all the other processes we spawned.
+	var waitErr error
+	for _, process := range auxProcesses {
+		waitErr = errors.Join(process.Wait(), waitErr)
+	}
+	if waitErr != nil {
+		log.WithError(err).Fatal("failed to reap auxiliary processes")
+	}
+
+	log.Info("guestinit successfully exiting")
 }
