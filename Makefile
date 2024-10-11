@@ -1,11 +1,6 @@
 OUT_DIR := out
 PROTOS_DIR := protos
 
-.PHONY: cli
-cli: protos
-	mkdir -p $(OUT_DIR)
-	go build -o $(OUT_DIR)/chv-lambda-cli main.go
-
 .PHONY: server
 server: protos
 	mkdir -p $(OUT_DIR)
@@ -41,4 +36,4 @@ guestrootfs:
 guest: guestinit guestrootfs
 
 .PHONY: all
-all: cli server client guestinit guestrootfs guest
+all: server client guestinit guestrootfs guest
