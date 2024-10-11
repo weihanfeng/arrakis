@@ -104,11 +104,12 @@ func main() {
 						Usage:    "Name of the VM to create",
 						Required: true,
 					},
+					// TODO: Deprecate this.
 					&cli.StringFlag{
 						Name:     "lang-type",
 						Aliases:  []string{"lt"},
 						Usage:    "If required, the language to support inside the server",
-						Required: true,
+						Required: false,
 					},
 				},
 				Action: func(ctx *cli.Context) error {
