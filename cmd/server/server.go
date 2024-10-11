@@ -63,12 +63,12 @@ type vm struct {
 	ip            *net.IPNet
 }
 
-func getKernelCmdLine(gatewayIP string, guestIP string, langType string) string {
+func getKernelCmdLine(gatewayIP string, guestIP string, entryPoint string) string {
 	return fmt.Sprintf(
-		"console=ttyS0 gateway_ip=%s guest_ip=%s root=/dev/vda rw lang_type=%s init=%s",
+		"console=ttyS0 gateway_ip=\"%s\" guest_ip=\"%s\" root=/dev/vda rw entry_point=\"%s\" init=%s",
 		gatewayIP,
 		guestIP,
-		langType,
+		entryPoint,
 		initPath,
 	)
 }
@@ -228,7 +228,7 @@ func reapVMProcess(vm *vm, logger *log.Entry, timeout time.Duration) error {
 	return fmt.Errorf("VM process was force killed after timeout")
 }
 
-func (s *server) createVM(ctx context.Context, vmName string, langType string) error {
+func (s *server) createVM(ctx context.Context, vmName string, entryPoint string) error {
 	vmStateDir := getVmStateDirPath(vmName)
 	err := os.MkdirAll(vmStateDir, 0755)
 	if err != nil {
@@ -274,7 +274,7 @@ func (s *server) createVM(ctx context.Context, vmName string, langType string) e
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
 			Kernel:  String(kernelPath),
-			Cmdline: String(getKernelCmdLine(bridgeIP, guestIP.String(), langType)),
+			Cmdline: String(getKernelCmdLine(bridgeIP, guestIP.String(), entryPoint)),
 		},
 		Disks:   []openapi.DiskConfig{{Path: rootfsPath}},
 		Cpus:    &openapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
@@ -326,7 +326,7 @@ type server struct {
 
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	vmName := req.GetVmName()
-	langType := req.GetLangType()
+	entryPoint := req.GetEntryPoint()
 	log.WithField("vmName", vmName).Infof("received request to start VM")
 
 	vm, exists := s.vms[vmName]
@@ -340,7 +340,7 @@ func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VM
 			return nil, fmt.Errorf("failed to boot existing VM. bad status: %v", resp)
 		}
 	} else {
-		err := s.createVM(ctx, vmName, langType)
+		err := s.createVM(ctx, vmName, entryPoint)
 		if err != nil {
 			log.Errorf("vm: %s failed to start: %v", vmName, err)
 			return nil, err

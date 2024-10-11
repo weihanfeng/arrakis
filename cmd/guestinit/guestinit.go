@@ -13,28 +13,49 @@ import (
 )
 
 const (
-	ifname  = "eth0"
-	ipBin   = "/usr/bin/ip"
-	paths   = "PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
-	bashBin = "/bin/bash"
+	ifname = "eth0"
+	ipBin  = "/usr/bin/ip"
+	// Node is already installed on the rootfs. But we do need to add it to the path.
+	paths          = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/bin/versions/node/v22.9.0/bin"
+	bashBin        = "/bin/bash"
+	serverIpEnvVar = "SERVER_IP"
 )
+
+// parseKeyFromCmdLine parses a key from the kernel command line. Assumes each
+// key:val is present like key="val" in /proc/cmdline.
+func parseKeyFromCmdLine(prefix string) (string, error) {
+	cmdline, err := os.ReadFile("/proc/cmdline")
+	if err != nil {
+		return "", fmt.Errorf("failed to read /proc/cmdline: %w", err)
+	}
+
+	key := prefix + "="
+	cmdlineStr := string(cmdline)
+
+	start := strings.Index(cmdlineStr, key)
+	if start == -1 {
+		return "", fmt.Errorf("key %q not found in kernel command line", key)
+	}
+
+	start += len(key)
+	value := strings.TrimPrefix(cmdlineStr[start:], "\"")
+	end := strings.IndexByte(value, '"')
+	if end == -1 {
+		return "", fmt.Errorf("unclosed quote for key %q in kernel command line", key)
+	}
+	return value[:end], nil
+}
 
 // parseNetworkingMetadata parses the networking metadata from the kernel command line.
 func parseNetworkingMetadata() (string, string, error) {
-	cmdline, err := os.ReadFile("/proc/cmdline")
+	guestCIDR, err := parseKeyFromCmdLine("guest_ip")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read /proc/cmdline: %w", err)
+		return "", "", fmt.Errorf("failed to parse guest_ip: %w", err)
 	}
 
-	params := strings.Fields(string(cmdline))
-	var guestCIDR, gatewayCIDR string
-
-	for _, param := range params {
-		if strings.HasPrefix(param, "guest_ip=") {
-			guestCIDR = strings.TrimPrefix(param, "guest_ip=")
-		} else if strings.HasPrefix(param, "gateway_ip=") {
-			gatewayCIDR = strings.TrimPrefix(param, "gateway_ip=")
-		}
+	gatewayCIDR, err := parseKeyFromCmdLine("gateway_ip")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse gateway_ip: %w", err)
 	}
 
 	if guestCIDR == "" || gatewayCIDR == "" {
@@ -50,37 +71,29 @@ func parseNetworkingMetadata() (string, string, error) {
 	return guestCIDR, gatewayIP.String(), nil
 }
 
-// parseLangTypeMetadata parses the language type metadata from the kernel command line.
-func parseLangTypeMetadata() (string, error) {
-	cmdline, err := os.ReadFile("/proc/cmdline")
-	if err != nil {
-		return "", fmt.Errorf("failed to read /proc/cmdline: %w", err)
+// startEntryPointInBg starts the entry point in the background.
+func startEntryPointInBg(entryPoint string) (*exec.Cmd, error) {
+	// Parse `entryPoint` by splitting on space.
+	parts := strings.Fields(entryPoint)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty entry point")
 	}
 
-	params := strings.Fields(string(cmdline))
-	prefix_to_find := "lang_type="
-	for _, param := range params {
-		if strings.HasPrefix(param, prefix_to_find) {
-			return strings.TrimPrefix(param, prefix_to_find), nil
-		}
-	}
+	command := parts[0]
+	args := parts[1:]
 
-	return "", fmt.Errorf("failed to parse lang_type: %w", err)
-}
-
-func startLangServerInBg(langType string) (*exec.Cmd, error) {
-	if langType != "node" {
-		return nil, fmt.Errorf("only node is supported got lang type: %s", langType)
-	}
-
-	cmd := exec.Command("/usr/bin/versions/node/v22.9.0/bin/node", "/opt/custom_scripts/server.js")
+	// Create the command.
+	cmd := exec.Command(command, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// Start the command.
 	err := cmd.Start()
 	if err != nil {
-		return nil, fmt.Errorf("failed to start lang server: %w", err)
+		return nil, fmt.Errorf("failed to start entry point command: %w", err)
 	}
+
+	log.Infof("Started entry point command: %s", entryPoint)
 	return cmd, nil
 }
 
@@ -129,9 +142,25 @@ func main() {
 	mount("none", "/sys", "sysfs", 0)
 	mount("none", "/sys/fs/cgroup", "cgroup", 0)
 
+	err := os.Setenv("PATH", paths)
+	if err != nil {
+		log.WithError(err).Fatalf("Error setting PATH")
+	}
+
 	guestCIDR, gatewayIP, err := parseNetworkingMetadata()
 	if err != nil {
 		log.WithError(err).Fatal("failed to parse guest networking metadata")
+	}
+
+	guestIP, _, err := net.ParseCIDR(guestCIDR)
+	if err != nil {
+		log.WithError(err).Fatalf("failed to parse guest CIDR: %v", err)
+	}
+
+	// This will be used by custom servers started by the user in this VM.
+	err = os.Setenv(serverIpEnvVar, guestIP.String())
+	if err != nil {
+		log.WithError(err).Fatalf("Error setting SERVER_IP: %s", guestIP.String())
 	}
 
 	// Setup networking.
@@ -170,46 +199,29 @@ func main() {
 		log.WithError(err).Fatal("failed to write nameserver to /etc/resolv.conf")
 	}
 
-	lang_type, err := parseLangTypeMetadata()
-	if err != nil {
-		log.WithError(err).Fatal("failed to parse lang_type")
-	}
-
 	var auxProcesses []*exec.Cmd
-	if lang_type != "" {
-		log.Infof("starting lang server with lang type: %s", lang_type)
-		cmd, err := startLangServerInBg(lang_type)
+	// Start the entry point command optionally specified by the user.
+	entryPoint, err := parseKeyFromCmdLine("entry_point")
+	if err != nil {
+		log.Warn("no valid entry point found")
+	}
+	if entryPoint != "" {
+		log.Infof("starting entry point command: %s", entryPoint)
+		cmd, err := startEntryPointInBg(entryPoint)
 		if err != nil {
-			log.WithError(err).Fatal("failed to start lang server")
+			log.WithError(err).Fatal("failed to start entry point")
 		}
 		auxProcesses = append(auxProcesses, cmd)
 	}
 
+	// Start the ssh server so that the user can log in to the VM for debugging.
 	cmd, err = startSshServerInBg()
 	if err != nil {
 		log.WithError(err).Fatal("failed to start ssh server")
 	}
 	log.Infof("started sshd with PID: %d", cmd.Process.Pid)
 
-	log.Infof("starting %s", bashBin)
-
-	cmd = exec.Command(bashBin)
-	cmd.Env = append(cmd.Env, paths)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err = cmd.Start()
-	if err != nil {
-		log.WithError(err).Fatalf("failed to start: %s", bashBin)
-	}
-
-	err = cmd.Wait()
-	if err != nil {
-		log.WithError(err).Fatalf("failed to wait for: %s", bashBin)
-	}
-
-	// After the ssh server is done. Reap all the other processes we spawned.
+	log.Infof("reaping auxiliary processes")
 	var waitErr error
 	for _, process := range auxProcesses {
 		waitErr = errors.Join(process.Wait(), waitErr)

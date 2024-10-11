@@ -58,7 +58,7 @@ func destroyVM(serverAddr string, vmName string) error {
 	return nil
 }
 
-func startVM(serverAddr string, vmName string, langType string) error {
+func startVM(serverAddr string, vmName string, entryPoint string) error {
 	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
@@ -69,8 +69,8 @@ func startVM(serverAddr string, vmName string, langType string) error {
 	ctx := context.Background()
 
 	request := &pb.VMRequest{
-		VmName:   vmName,
-		LangType: langType,
+		VmName:     vmName,
+		EntryPoint: entryPoint,
 	}
 	_, err = client.StartVM(ctx, request)
 	if err != nil {
@@ -104,16 +104,15 @@ func main() {
 						Usage:    "Name of the VM to create",
 						Required: true,
 					},
-					// TODO: Deprecate this.
 					&cli.StringFlag{
-						Name:     "lang-type",
-						Aliases:  []string{"lt"},
-						Usage:    "If required, the language to support inside the server",
+						Name:     "entry-point",
+						Aliases:  []string{"e"},
+						Usage:    "Entry point of the VM",
 						Required: false,
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return startVM(ctx.String("server"), ctx.String("name"), ctx.String("lang-type"))
+					return startVM(ctx.String("server"), ctx.String("name"), ctx.String("entry-point"))
 				},
 			},
 			{
