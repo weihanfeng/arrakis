@@ -27,10 +27,11 @@ guestinit:
 	mkdir -p $(OUT_DIR)
 	CGO_ENABLED=0 go build -o $(OUT_DIR)/chv-guestinit cmd/guestinit/guestinit.go
 
+# TODO: Try to avoid sudo here.
 .PHONY: guestrootfs
-guestrootfs:
+guestrootfs: guestinit
 	mkdir -p $(OUT_DIR)
-	./resources/scripts/rootfs/rootfs-from-dockerfile.sh
+	sudo ./resources/scripts/rootfs/rootfs-from-dockerfile.sh
 
 .PHONY: guest
 guest: guestinit guestrootfs
