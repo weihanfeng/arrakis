@@ -59,6 +59,8 @@ RUN . ~/.nvm/nvm.sh && nvm install 22
 # Create a directory for your custom scripts
 RUN mkdir -p /opt/custom_scripts
 
+RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
+
 # Copy your custom scripts into the image
 COPY out/chv-guestinit /opt/custom_scripts/guestinit
 COPY resources/scripts/rootfs/check-guest-networking.sh /opt/custom_scripts/.
