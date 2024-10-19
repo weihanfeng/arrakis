@@ -71,6 +71,7 @@ COPY resources/scripts/rootfs/vsock-test-server.py /opt/custom_scripts/.
 # Custom Node and Python scripts can be put under "/opt/custom_scripts" and passed as "entry_point"
 # in the client.
 COPY resources/scripts/rootfs/server.js /opt/custom_scripts/.
+COPY resources/scripts/rootfs/server.py /opt/custom_scripts/.
 
 # Make sure the scripts are executable
 RUN chmod +x /opt/custom_scripts/*

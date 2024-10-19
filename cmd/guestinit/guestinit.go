@@ -1,12 +1,12 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
@@ -72,11 +72,11 @@ func parseNetworkingMetadata() (string, string, error) {
 }
 
 // startEntryPointInBg starts the entry point in the background.
-func startEntryPointInBg(entryPoint string) (*exec.Cmd, error) {
+func startEntryPointInBg(entryPoint string, wg *sync.WaitGroup) error {
 	// Parse `entryPoint` by splitting on space.
 	parts := strings.Fields(entryPoint)
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("empty entry point")
+		return fmt.Errorf("empty entry point")
 	}
 
 	command := parts[0]
@@ -87,32 +87,23 @@ func startEntryPointInBg(entryPoint string) (*exec.Cmd, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Start the command.
-	err := cmd.Start()
-	if err != nil {
-		return nil, fmt.Errorf("failed to start entry point command: %w", err)
-	}
-
+	go runCommand(cmd, wg)
 	log.Infof("Started entry point command: %s", entryPoint)
-	return cmd, nil
+	return nil
 }
 
-func startSshServerInBg() (*exec.Cmd, error) {
+func startSshServerInBg(wg *sync.WaitGroup) error {
 	// Needed to start sshd.
 	err := os.MkdirAll("/run/sshd", 0755)
 	if err != nil {
-		return nil, fmt.Errorf("error creating /run/sshd: %w", err)
+		return fmt.Errorf("error creating /run/sshd: %w", err)
 	}
 
 	cmd := exec.Command("/usr/sbin/sshd")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
-	err = cmd.Start()
-	if err != nil {
-		return nil, fmt.Errorf("failed to start sshd: %w", err)
-	}
-	return cmd, nil
+	go runCommand(cmd, wg)
+	return nil
 }
 
 func mount(source, target, fsType string, flags uintptr) error {
@@ -127,7 +118,6 @@ func mount(source, target, fsType string, flags uintptr) error {
 	if err != nil {
 		return fmt.Errorf("error mounting %s to %s, error: %w", source, target, err)
 	}
-
 	return nil
 }
 
@@ -170,6 +160,22 @@ func setupNetworking(guestCIDR string, gatewayIP string) error {
 	return nil
 }
 
+func runCommand(cmd *exec.Cmd, wg *sync.WaitGroup) error {
+	defer wg.Done()
+
+	wg.Add(1)
+	err := cmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start: %v", cmd)
+	}
+
+	err = cmd.Wait()
+	if err != nil {
+		return fmt.Errorf("error while watiing for cmd: %v err: %w", cmd, err)
+	}
+	return nil
+}
+
 func main() {
 	log.Infof("starting guestinit")
 
@@ -208,36 +214,26 @@ func main() {
 		log.WithError(err).Fatal("failed to setup networking")
 	}
 
-	var auxProcesses []*exec.Cmd
+	var wg sync.WaitGroup
 	// Start the entry point command optionally specified by the user.
 	entryPoint, err := parseKeyFromCmdLine("entry_point")
 	if err != nil {
 		log.Warn("no valid entry point found")
-	}
-	if entryPoint != "" {
+	} else if entryPoint != "" {
 		log.Infof("starting entry point command: %s", entryPoint)
-		cmd, err := startEntryPointInBg(entryPoint)
+		err := startEntryPointInBg(entryPoint, &wg)
 		if err != nil {
 			log.WithError(err).Fatal("failed to start entry point")
 		}
-		auxProcesses = append(auxProcesses, cmd)
 	}
 
 	// Start the ssh server so that the user can log in to the VM for debugging.
-	cmd, err := startSshServerInBg()
+	err = startSshServerInBg(&wg)
 	if err != nil {
 		log.WithError(err).Fatal("failed to start ssh server")
 	}
-	log.Infof("started sshd with PID: %d", cmd.Process.Pid)
 
 	log.Infof("reaping auxiliary processes")
-	var waitErr error
-	for _, process := range auxProcesses {
-		waitErr = errors.Join(process.Wait(), waitErr)
-	}
-	if waitErr != nil {
-		log.WithError(err).Fatal("failed to reap auxiliary processes")
-	}
-
+	wg.Wait()
 	log.Info("guestinit successfully exiting")
 }

@@ -19,7 +19,7 @@ try {
   const server = createServer((req, res) => {
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/plain');
-    res.end('Hello World');
+    res.end('Hello World from a Node server\n');
   });
 
   server.listen(port, hostname, () => {
