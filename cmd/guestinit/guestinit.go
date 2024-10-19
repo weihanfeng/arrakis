@@ -131,6 +131,45 @@ func mount(source, target, fsType string, flags uintptr) error {
 	return nil
 }
 
+// setupNetworking sets up networking inside the guest.
+func setupNetworking(guestCIDR string, gatewayIP string) error {
+	cmd := exec.Command(ipBin, "l", "set", "lo", "up")
+	err := cmd.Run()
+	if err != nil {
+		log.WithError(err).Fatal("failed to set the lo interface up")
+	}
+
+	cmd = exec.Command(ipBin, "a", "add", guestCIDR, "dev", ifname)
+	err = cmd.Run()
+	if err != nil {
+		log.WithError(err).Fatal("failed to add IP address to interface")
+	}
+
+	cmd = exec.Command(ipBin, "l", "set", ifname, "up")
+	err = cmd.Run()
+	if err != nil {
+		log.WithError(err).Fatal("failed to set interface up")
+	}
+
+	cmd = exec.Command(ipBin, "r", "add", "default", "via", gatewayIP, "dev", ifname)
+	err = cmd.Run()
+	if err != nil {
+		log.WithError(err).Fatal("failed to add default route")
+	}
+
+	f, err := os.OpenFile("/etc/resolv.conf", os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.WithError(err).Fatal("failed to open /etc/resolv.conf")
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("nameserver 8.8.8.8\n")
+	if err != nil {
+		log.WithError(err).Fatal("failed to write nameserver to /etc/resolv.conf")
+	}
+	return nil
+}
+
 func main() {
 	log.Infof("starting guestinit")
 
@@ -164,39 +203,9 @@ func main() {
 	}
 
 	// Setup networking.
-	cmd := exec.Command(ipBin, "l", "set", "lo", "up")
-	err = cmd.Run()
+	err = setupNetworking(guestCIDR, gatewayIP)
 	if err != nil {
-		log.WithError(err).Fatal("failed to set the lo interface up")
-	}
-
-	cmd = exec.Command(ipBin, "a", "add", guestCIDR, "dev", ifname)
-	err = cmd.Run()
-	if err != nil {
-		log.WithError(err).Fatal("failed to add IP address to interface")
-	}
-
-	cmd = exec.Command(ipBin, "l", "set", ifname, "up")
-	err = cmd.Run()
-	if err != nil {
-		log.WithError(err).Fatal("failed to set interface up")
-	}
-
-	cmd = exec.Command(ipBin, "r", "add", "default", "via", gatewayIP, "dev", ifname)
-	err = cmd.Run()
-	if err != nil {
-		log.WithError(err).Fatal("failed to add default route")
-	}
-
-	f, err := os.OpenFile("/etc/resolv.conf", os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		log.WithError(err).Fatal("failed to open /etc/resolv.conf")
-	}
-	defer f.Close()
-
-	_, err = f.WriteString("nameserver 8.8.8.8\n")
-	if err != nil {
-		log.WithError(err).Fatal("failed to write nameserver to /etc/resolv.conf")
+		log.WithError(err).Fatal("failed to setup networking")
 	}
 
 	var auxProcesses []*exec.Cmd
@@ -215,7 +224,7 @@ func main() {
 	}
 
 	// Start the ssh server so that the user can log in to the VM for debugging.
-	cmd, err = startSshServerInBg()
+	cmd, err := startSshServerInBg()
 	if err != nil {
 		log.WithError(err).Fatal("failed to start ssh server")
 	}
