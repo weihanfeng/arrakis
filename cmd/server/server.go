@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"strings"
+	"syscall"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -322,6 +325,7 @@ type server struct {
 	vms         map[string]*vm
 	fountain    *fountain.Fountain
 	ipAllocator *ipallocator.IPAllocator
+	sigChan     chan os.Signal
 }
 
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
@@ -373,14 +377,12 @@ func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMR
 	return &protos.VMResponse{}, nil
 }
 
-func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
-	vmName := req.GetVmName()
+func (s *server) destroyVM(ctx context.Context, vmName string) error {
 	logger := log.WithField("vmName", vmName)
-	logger.Infof("received request to destroy VM")
 
 	vm, exists := s.vms[vmName]
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "vm %s not found", vmName)
+		return status.Errorf(codes.NotFound, "vm %s not found", vmName)
 	}
 
 	// Shutdown for a graceful exit before full deletion. Don't error out if this fails as we still
@@ -396,21 +398,21 @@ func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.
 	deleteReq := vm.apiClient.DefaultAPI.DeleteVM(ctx)
 	resp, err = deleteReq.Execute()
 	if err != nil {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to delete VM: %v", err))
+		return status.Error(codes.Internal, fmt.Sprintf("failed to delete VM: %v", err))
 	}
 
 	if resp.StatusCode >= 300 {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
+		return status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
 	}
 
 	shutdownVMMReq := vm.apiClient.DefaultAPI.ShutdownVMM(ctx)
 	resp, err = shutdownVMMReq.Execute()
 	if err != nil {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM: %v", err))
+		return status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM: %v", err))
 	}
 
 	if resp.StatusCode >= 300 {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM. bad status: %v", resp))
+		return status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM. bad status: %v", resp))
 	}
 
 	err = reapVMProcess(vm, logger, 20*time.Second)
@@ -434,6 +436,29 @@ func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.
 		log.Warnf("failed to free IP: %s: %v", vm.ip.IP.String(), err)
 	}
 	delete(s.vms, vmName)
+	return nil
+}
+
+func (s *server) destroyAllVMS(ctx context.Context) error {
+	log.Info("destroying all VMs")
+	var finalErr error
+	for _, vm := range s.vms {
+		err := s.destroyVM(context.Background(), vm.name)
+		if err != nil {
+			log.Warnf("failed to destroy and clean up vm: %s", vm.name)
+		}
+		finalErr = errors.Join(finalErr, err)
+	}
+	return finalErr
+}
+
+func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
+	log.Infof("received request to destroy VM")
+	vmName := req.GetVmName()
+	err := s.destroyVM(ctx, vmName)
+	if err != nil {
+		return nil, err
+	}
 	return &protos.VMResponse{}, nil
 }
 
@@ -458,12 +483,25 @@ func main() {
 	if err != nil {
 		log.WithError(err).Fatalf("failed to create ip allocator")
 	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	s := grpc.NewServer()
 	apiServer := &server{
 		vms:         make(map[string]*vm),
 		fountain:    fountain.NewFountain(bridgeName),
 		ipAllocator: ipAllocator,
+		sigChan:     sigChan,
 	}
+
+	// Set up signal handler.
+	go func() {
+		log.Infof("XXX: Waiting for signal")
+		sig := <-apiServer.sigChan
+		s.GracefulStop()
+		log.Infof("received signal: %v", sig)
+		apiServer.destroyAllVMS(context.Background())
+	}()
 
 	protos.RegisterVMManagementServiceServer(s, apiServer)
 	log.Printf("server listening at %v", lis.Addr())
