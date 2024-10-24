@@ -3,6 +3,8 @@ package fountain
 import (
 	"fmt"
 	"os/exec"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type Fountain struct {
@@ -32,6 +34,7 @@ func (f *Fountain) CreateTapDevice(vmName string) (string, error) {
 
 func (f *Fountain) DestroyTapDevice(vmName string) error {
 	tapDevice := fmt.Sprintf("tap-%s", vmName)
+	log.Errorf("XXX: delete tap device: %s", tapDevice)
 
 	// Remove the tap device from the bridge
 	if err := exec.Command("ip", "link", "set", tapDevice, "nomaster").Run(); err != nil {

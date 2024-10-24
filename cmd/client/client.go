@@ -58,6 +58,24 @@ func destroyVM(serverAddr string, vmName string) error {
 	return nil
 }
 
+func destroyAllVMs(serverAddr string) error {
+	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewVMManagementServiceClient(conn)
+	ctx := context.Background()
+	_, err = client.DestroyAllVMs(ctx, &pb.DestroyAllVMsRequest{})
+	if err != nil {
+		return fmt.Errorf("error destroying all VMs: %w", err)
+	}
+
+	log.Info("Successfully destroyed all VMs")
+	return nil
+}
+
 func startVM(serverAddr string, vmName string, entryPoint string) error {
 	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -143,6 +161,13 @@ func main() {
 				},
 				Action: func(ctx *cli.Context) error {
 					return destroyVM(ctx.String("server"), ctx.String("name"))
+				},
+			},
+			{
+				Name:  "destroy-all",
+				Usage: "Destroy all VMs",
+				Action: func(ctx *cli.Context) error {
+					return destroyAllVMs(ctx.String("server"))
 				},
 			},
 		},
