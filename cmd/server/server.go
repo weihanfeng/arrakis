@@ -503,6 +503,23 @@ func (s *server) ListAllVMs(ctx context.Context, req *protos.ListAllVMsRequest) 
 	return resp, nil
 }
 
+func (s *server) ListVM(ctx context.Context, req *protos.ListVMRequest) (*protos.ListVMResponse, error) {
+	vmName := req.GetVmName()
+	vm, ok := s.vms[vmName]
+	if !ok {
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
+	}
+
+	resp := &protos.ListVMResponse{}
+	resp.VmInfo = &protos.VMInfo{
+		VmName:        vm.name,
+		Ip:            vm.ip.String(),
+		Status:        vm.status,
+		TapDeviceName: vm.tapDevice,
+	}
+	return resp, nil
+}
+
 func main() {
 	err := os.MkdirAll(stateDir, 0755)
 	if err != nil {

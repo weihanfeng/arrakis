@@ -129,6 +129,28 @@ func listAllVMs(serverAddr string) error {
 	return nil
 }
 
+func listVM(serverAddr string, vmName string) error {
+	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewVMManagementServiceClient(conn)
+	ctx := context.Background()
+
+	request := &pb.ListVMRequest{
+		VmName: vmName,
+	}
+	resp, err := client.ListVM(ctx, request)
+	if err != nil {
+		return fmt.Errorf("error starting: %w", err)
+	}
+
+	fmt.Println(printVMInfo(resp.VmInfo))
+	return nil
+}
+
 func main() {
 	app := &cli.App{
 		Name:  "vm-cli",
@@ -205,6 +227,21 @@ func main() {
 				Usage: "List all VMs",
 				Action: func(ctx *cli.Context) error {
 					return listAllVMs(ctx.String("server"))
+				},
+			},
+			{
+				Name:  "list",
+				Usage: "List VM info",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM to destroy",
+						Required: true,
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					return listVM(ctx.String("server"), ctx.String("name"))
 				},
 			},
 		},

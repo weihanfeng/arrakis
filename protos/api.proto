@@ -10,6 +10,7 @@ service VMManagementService {
   rpc DestroyVM (VMRequest) returns (VMResponse) {}
   rpc DestroyAllVMs (DestroyAllVMsRequest) returns (VMResponse) {}
   rpc ListAllVMs (ListAllVMsRequest) returns (ListAllVMsResponse) {}
+  rpc ListVM (ListVMRequest) returns (ListVMResponse) {}
 }
 
 message VMRequest {
@@ -23,6 +24,16 @@ message VMResponse {}
 message DestroyAllVMsRequest {}
 
 message ListAllVMsRequest {}
+
+message ListVMRequest {
+  string vm_name = 1;
+  // Next ID: 2.
+}
+
+message ListVMResponse {
+  VMInfo vm_info = 1;
+  // Next ID: 2.
+}
 
 enum VMStatus {
   VM_STATUS_UNSPECIFIED = 0;
@@ -42,3 +53,4 @@ message ListAllVMsResponse {
   repeated VMInfo vms = 1;
   // Next Id: 2.
 }
+
