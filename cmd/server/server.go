@@ -64,6 +64,8 @@ type vm struct {
 	apiClient     *openapi.APIClient
 	process       *os.Process
 	ip            *net.IPNet
+	tapDevice     string
+	status        protos.VMStatus
 }
 
 func getKernelCmdLine(gatewayIP string, guestIP string, entryPoint string) string {
@@ -272,7 +274,7 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	if err != nil {
 		return fmt.Errorf("error waiting for vm: %w", err)
 	}
-	log.WithField("vmname", vmName).Infof("VM started PID:%d", cmd.Process.Pid)
+	log.WithField("vmname", vmName).Infof("VM started Pid:%d", cmd.Process.Pid)
 
 	guestIP, err := s.ipAllocator.AllocateIP()
 	if err != nil {
@@ -321,6 +323,8 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 		apiClient:     apiClient,
 		process:       cmd.Process,
 		ip:            guestIP,
+		tapDevice:     tapDevice,
+		status:        protos.VMStatus_VM_STATUS_RUNNING,
 	}
 	log.Infof("Successfully created VM: %s", vmName)
 	s.vms[vmName] = vm
@@ -351,6 +355,8 @@ func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VM
 		if resp.StatusCode >= 300 {
 			return nil, fmt.Errorf("failed to boot existing VM. bad status: %v", resp)
 		}
+		// This is set by `createVM` when the VM is new.
+		vm.status = protos.VMStatus_VM_STATUS_RUNNING
 	} else {
 		err := s.createVM(ctx, vmName, entryPoint)
 		if err != nil {
@@ -382,6 +388,7 @@ func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMR
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
 	}
 
+	vm.status = protos.VMStatus_VM_STATUS_STOPPED
 	return &protos.VMResponse{}, nil
 }
 
@@ -480,6 +487,22 @@ func (s *server) DestroyAllVMs(ctx context.Context, req *protos.DestroyAllVMsReq
 	return &protos.VMResponse{}, nil
 }
 
+func (s *server) ListAllVMs(ctx context.Context, req *protos.ListAllVMsRequest) (*protos.ListAllVMsResponse, error) {
+	resp := &protos.ListAllVMsResponse{}
+	var vms []*protos.VMInfo
+	for _, vm := range s.vms {
+		vmInfo := protos.VMInfo{
+			VmName:        vm.name,
+			Ip:            vm.ip.String(),
+			Status:        vm.status,
+			TapDeviceName: vm.tapDevice,
+		}
+		vms = append(vms, &vmInfo)
+	}
+	resp.Vms = vms
+	return resp, nil
+}
+
 func main() {
 	err := os.MkdirAll(stateDir, 0755)
 	if err != nil {
@@ -522,7 +545,7 @@ func main() {
 	}()
 
 	protos.RegisterVMManagementServiceServer(s, apiServer)
-	log.Printf("server PID:%d listening at %v", os.Getpid(), lis.Addr())
+	log.Printf("server Pid:%d listening at %v", os.Getpid(), lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		log.WithError(err).Fatalf("failed to serve")
 	}

@@ -9,6 +9,7 @@ service VMManagementService {
   rpc StopVM (VMRequest) returns (VMResponse) {}
   rpc DestroyVM (VMRequest) returns (VMResponse) {}
   rpc DestroyAllVMs (DestroyAllVMsRequest) returns (VMResponse) {}
+  rpc ListAllVMs (ListAllVMsRequest) returns (ListAllVMsResponse) {}
 }
 
 message VMRequest {
@@ -17,8 +18,27 @@ message VMRequest {
   // Next Id: 3.
 }
 
-message DestroyAllVMsRequest {
+message VMResponse {}
 
+message DestroyAllVMsRequest {}
+
+message ListAllVMsRequest {}
+
+enum VMStatus {
+  VM_STATUS_UNSPECIFIED = 0;
+  VM_STATUS_RUNNING = 1;
+  VM_STATUS_STOPPED = 2;
 }
 
-message VMResponse {}
+message VMInfo {
+  string vm_name = 1;
+  string ip = 2;
+  string tap_device_name = 3;
+  VMStatus status = 4;
+  // Next Id: 5.
+}
+
+message ListAllVMsResponse {
+  repeated VMInfo vms = 1;
+  // Next Id: 2.
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -99,6 +100,35 @@ func startVM(serverAddr string, vmName string, entryPoint string) error {
 	return nil
 }
 
+func printVMInfo(vm *pb.VMInfo) string {
+	return fmt.Sprintf("VM: Name=%s, Status=%s, IP=%s, TapDevice=%s",
+		vm.VmName,
+		strings.TrimPrefix(vm.GetStatus().String(), "VM_STATUS_"),
+		vm.Ip,
+		vm.TapDeviceName,
+	)
+}
+
+func listAllVMs(serverAddr string) error {
+	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewVMManagementServiceClient(conn)
+	ctx := context.Background()
+	resp, err := client.ListAllVMs(ctx, &pb.ListAllVMsRequest{})
+	if err != nil {
+		return fmt.Errorf("error listing all VMs: %w", err)
+	}
+
+	for _, vm := range resp.Vms {
+		fmt.Println(printVMInfo(vm))
+	}
+	return nil
+}
+
 func main() {
 	app := &cli.App{
 		Name:  "vm-cli",
@@ -168,6 +198,13 @@ func main() {
 				Usage: "Destroy all VMs",
 				Action: func(ctx *cli.Context) error {
 					return destroyAllVMs(ctx.String("server"))
+				},
+			},
+			{
+				Name:  "list-all",
+				Usage: "List all VMs",
+				Action: func(ctx *cli.Context) error {
+					return listAllVMs(ctx.String("server"))
 				},
 			},
 		},
