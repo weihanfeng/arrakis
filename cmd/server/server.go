@@ -256,6 +256,12 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
+	// Add VMs to a separate process group. Otherwise Ctrl-C goes to the VMs
+	// without us handling it. Now we can handle it and gracefully shut down
+	// each VM.
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
 
 	err = cmd.Start()
 	if err != nil {
@@ -266,7 +272,7 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	if err != nil {
 		return fmt.Errorf("error waiting for vm: %w", err)
 	}
-	log.WithField("vmname", vmName).Info("chv binary spawn successful")
+	log.WithField("vmname", vmName).Infof("VM started PID:%d", cmd.Process.Pid)
 
 	guestIP, err := s.ipAllocator.AllocateIP()
 	if err != nil {
@@ -316,7 +322,7 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 		process:       cmd.Process,
 		ip:            guestIP,
 	}
-	log.Errorf("XXX: Added VM: %s", vmName)
+	log.Infof("Successfully created VM: %s", vmName)
 	s.vms[vmName] = vm
 	return nil
 }
@@ -332,7 +338,8 @@ type server struct {
 func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	vmName := req.GetVmName()
 	entryPoint := req.GetEntryPoint()
-	log.WithField("vmName", vmName).Infof("received request to start VM")
+	logger := log.WithField("vmName", vmName)
+	logger.Infof("received request to start VM")
 
 	vm, exists := s.vms[vmName]
 	if exists {
@@ -347,12 +354,12 @@ func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VM
 	} else {
 		err := s.createVM(ctx, vmName, entryPoint)
 		if err != nil {
-			log.Errorf("vm: %s failed to start: %v", vmName, err)
+			logger.Errorf("failed to start: %v", err)
 			return nil, err
 		}
 	}
 
-	log.Infof("vm: %s started", vmName)
+	logger.Infof("VM started")
 	return &protos.VMResponse{}, nil
 }
 
@@ -379,10 +386,9 @@ func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMR
 }
 
 func (s *server) destroyVM(ctx context.Context, vmName string) error {
-	log.Errorf("XXX: DestroyVM: %s", vmName)
+	log.WithField("vmName", vmName).Info("destroyVM")
 	logger := log.WithField("vmName", vmName)
 
-	logger.Error("XXX: D1")
 	vm, exists := s.vms[vmName]
 	if !exists {
 		return status.Errorf(codes.NotFound, "vm %s not found", vmName)
@@ -390,7 +396,6 @@ func (s *server) destroyVM(ctx context.Context, vmName string) error {
 
 	// Shutdown for a graceful exit before full deletion. Don't error out if this fails as we still
 	// want to try a deletion after this.
-	logger.Error("XXX: D1a")
 	shutdownReq := vm.apiClient.DefaultAPI.ShutdownVM(ctx)
 	resp, err := shutdownReq.Execute()
 	if err != nil {
@@ -399,7 +404,6 @@ func (s *server) destroyVM(ctx context.Context, vmName string) error {
 		logger.Warnf("failed to shutdown VM before deleting. bad status: %v", resp)
 	}
 
-	logger.Error("XXX: D1b")
 	deleteReq := vm.apiClient.DefaultAPI.DeleteVM(ctx)
 	resp, err = deleteReq.Execute()
 	if err != nil {
@@ -410,7 +414,6 @@ func (s *server) destroyVM(ctx context.Context, vmName string) error {
 		return status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
 	}
 
-	logger.Error("XXX: D1c")
 	shutdownVMMReq := vm.apiClient.DefaultAPI.ShutdownVMM(ctx)
 	resp, err = shutdownVMMReq.Execute()
 	if err != nil {
@@ -421,31 +424,26 @@ func (s *server) destroyVM(ctx context.Context, vmName string) error {
 		return status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM. bad status: %v", resp))
 	}
 
-	logger.Error("XXX: D1d")
 	err = reapVMProcess(vm, logger, 20*time.Second)
 	if err != nil {
 		logger.Warnf("failed to reap VM process: %v", err)
 	}
 
-	logger.Error("XXX: D1e")
 	// Once deleted remove its directory and remove it from the internal store of VMs.
 	err = os.RemoveAll(vm.stateDirPath)
 	if err != nil {
 		log.Warnf("Failed to delete directory %s: %v", vm.stateDirPath, err)
 	}
 
-	logger.Error("XXX: D1f")
 	err = s.fountain.DestroyTapDevice(vmName)
 	if err != nil {
 		log.Warnf("failed to destroy the tap device for vm: %s: %v", vmName, err)
 	}
 
-	logger.Error("XXX: D1g")
 	err = s.ipAllocator.FreeIP(vm.ip.IP)
 	if err != nil {
 		log.Warnf("failed to free IP: %s: %v", vm.ip.IP.String(), err)
 	}
-	logger.Error("XXX: D1h")
 	delete(s.vms, vmName)
 	return nil
 }
@@ -454,7 +452,6 @@ func (s *server) destroyAllVMs(ctx context.Context) error {
 	log.Info("destroying all VMs")
 	var finalErr error
 	for _, vm := range s.vms {
-		log.Errorf("XXX: destroying vm: %s", vm.name)
 		err := s.destroyVM(ctx, vm.name)
 		if err != nil {
 			log.Warnf("failed to destroy and clean up vm: %s", vm.name)
@@ -517,7 +514,7 @@ func main() {
 
 	// Set up signal handler.
 	go func() {
-		log.Infof("XXX: Waiting for signal")
+		log.Infof("waiting for signal")
 		sig := <-apiServer.sigChan
 		log.Infof("received signal: %v", sig)
 		s.GracefulStop()
@@ -525,11 +522,10 @@ func main() {
 	}()
 
 	protos.RegisterVMManagementServiceServer(s, apiServer)
-	log.Printf("server listening at %v", lis.Addr())
+	log.Printf("server PID:%d listening at %v", os.Getpid(), lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		log.WithError(err).Fatalf("failed to serve")
 	}
-	log.Infof("destroying all VMs")
 	apiServer.destroyAllVMs(context.Background())
 	log.WithError(err).Info("server exited")
 }

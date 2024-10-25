@@ -34,7 +34,10 @@ func (f *Fountain) CreateTapDevice(vmName string) (string, error) {
 
 func (f *Fountain) DestroyTapDevice(vmName string) error {
 	tapDevice := fmt.Sprintf("tap-%s", vmName)
-	log.Errorf("XXX: delete tap device: %s", tapDevice)
+	log.WithFields(log.Fields{
+		"vmName":    vmName,
+		"tapDevice": tapDevice,
+	}).Info("destroy tap device")
 
 	// Remove the tap device from the bridge
 	if err := exec.Command("ip", "link", "set", tapDevice, "nomaster").Run(); err != nil {
