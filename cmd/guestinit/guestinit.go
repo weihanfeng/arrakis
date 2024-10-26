@@ -106,7 +106,7 @@ func startSshServerInBg(wg *sync.WaitGroup) error {
 	return nil
 }
 
-func mount(source, target, fsType string, flags uintptr) error {
+func mount(source, target, fsType string, flags uintptr, data ...string) error {
 	if _, err := os.Stat(target); os.IsNotExist(err) {
 		err := os.MkdirAll(target, 0755)
 		if err != nil {
@@ -114,7 +114,12 @@ func mount(source, target, fsType string, flags uintptr) error {
 		}
 	}
 
-	err := syscall.Mount(source, target, fsType, flags, "")
+	d := ""
+	if len(data) > 0 {
+		d = data[0]
+	}
+
+	err := syscall.Mount(source, target, fsType, flags, d)
 	if err != nil {
 		return fmt.Errorf("error mounting %s to %s, error: %w", source, target, err)
 	}
@@ -176,18 +181,41 @@ func runCommand(cmd *exec.Cmd, wg *sync.WaitGroup) error {
 	return nil
 }
 
+func remountRootAsReadOnly() error {
+	cmd := exec.Command("mount", "-o", "remount,ro", "/")
+	return cmd.Run()
+}
+
 func main() {
 	log.Infof("starting guestinit")
 
 	// Setup essential mounts.
-	mount("none", "/proc", "proc", 0)
-	mount("none", "/dev/pts", "devpts", 0)
-	mount("none", "/dev/mqueue", "mqueue", 0)
-	mount("none", "/dev/shm", "tmpfs", 0)
-	mount("none", "/sys", "sysfs", 0)
-	mount("none", "/sys/fs/cgroup", "cgroup", 0)
+	err := mount("none", "/proc", "proc", 0)
+	if err != nil {
+		log.WithError(err).Fatalf("Error mounting proc")
+	}
+	err = mount("none", "/dev/pts", "devpts", 0)
+	if err != nil {
+		log.WithError(err).Fatalf("Error mounting devpts")
+	}
+	err = mount("none", "/dev/mqueue", "mqueue", 0)
+	if err != nil {
+		log.WithError(err).Fatalf("Error mounting mqueue")
+	}
+	err = mount("none", "/dev/shm", "tmpfs", 0)
+	if err != nil {
+		log.WithError(err).Fatalf("Error mounting shm")
+	}
+	err = mount("none", "/sys", "sysfs", 0)
+	if err != nil {
+		log.WithError(err).Fatalf("Error mounting sysfs")
+	}
+	err = mount("none", "/sys/fs/cgroup", "cgroup", 0)
+	if err != nil {
+		log.WithError(err).Fatalf("Error mounting cgroup")
+	}
 
-	err := os.Setenv("PATH", paths)
+	err = os.Setenv("PATH", paths)
 	if err != nil {
 		log.WithError(err).Fatalf("Error setting PATH")
 	}
@@ -233,7 +261,18 @@ func main() {
 		log.WithError(err).Fatal("failed to start ssh server")
 	}
 
-	log.Infof("reaping auxiliary processes")
+	// Mount as ro so that we can't be corrupted by malicious code.
+	err = remountRootAsReadOnly()
+	if err != nil {
+		log.WithError(err).Fatal("failed to remount root as readonly")
+	}
+
+	err = mount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "size=128M")
+	if err != nil {
+		log.WithError(err).Fatal("failed to mount tmpfs as writable")
+	}
+
+	log.Info("reaping processes")
 	wg.Wait()
 	log.Info("guestinit successfully exiting")
 }
