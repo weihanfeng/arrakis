@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,6 +21,30 @@ const (
 	bashBin        = "/bin/bash"
 	serverIpEnvVar = "SERVER_IP"
 )
+
+// runCommandInBg runs `cmd` in a goroutine.
+func runCommandInBg(cmd *exec.Cmd, wg *sync.WaitGroup) error {
+	log.Infof("XXX: START runCommand: %v", cmd)
+	err := cmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start cmd: %v err: %w", cmd, err)
+	}
+
+	wg.Add(1)
+	go func() {
+		defer func() {
+			log.Infof("XXX: END runCommand: %v", cmd)
+			wg.Done()
+		}()
+
+		err = cmd.Wait()
+		if err != nil {
+			log.WithError(err).Errorf("failed to wait for cmd: %v err: %v", cmd, err)
+			return
+		}
+	}()
+	return nil
+}
 
 // parseKeyFromCmdLine parses a key from the kernel command line. Assumes each
 // key:val is present like key="val" in /proc/cmdline.
@@ -87,7 +112,10 @@ func startEntryPointInBg(entryPoint string, wg *sync.WaitGroup) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	go runCommand(cmd, wg)
+	err := runCommandInBg(cmd, wg)
+	if err != nil {
+		return fmt.Errorf("failed to start entry point in bg: %w", err)
+	}
 	log.Infof("Started entry point command: %s", entryPoint)
 	return nil
 }
@@ -102,7 +130,11 @@ func startSshServerInBg(wg *sync.WaitGroup) error {
 	cmd := exec.Command("/usr/sbin/sshd")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	go runCommand(cmd, wg)
+
+	err = runCommandInBg(cmd, wg)
+	if err != nil {
+		return fmt.Errorf("failed to start sshd: %w", err)
+	}
 	return nil
 }
 
@@ -161,22 +193,6 @@ func setupNetworking(guestCIDR string, gatewayIP string) error {
 	_, err = f.WriteString("nameserver 8.8.8.8\n")
 	if err != nil {
 		log.WithError(err).Fatal("failed to write nameserver to /etc/resolv.conf")
-	}
-	return nil
-}
-
-func runCommand(cmd *exec.Cmd, wg *sync.WaitGroup) error {
-	defer wg.Done()
-
-	wg.Add(1)
-	err := cmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start: %v", cmd)
-	}
-
-	err = cmd.Wait()
-	if err != nil {
-		return fmt.Errorf("error while watiing for cmd: %v err: %w", cmd, err)
 	}
 	return nil
 }
@@ -245,14 +261,13 @@ func main() {
 	var wg sync.WaitGroup
 	// Start the entry point command optionally specified by the user.
 	entryPoint, err := parseKeyFromCmdLine("entry_point")
-	if err != nil {
-		log.Warn("no valid entry point found")
-	} else if entryPoint != "" {
-		log.Infof("starting entry point command: %s", entryPoint)
+	entryPointSet := false
+	if err == nil && entryPoint != "" {
 		err := startEntryPointInBg(entryPoint, &wg)
 		if err != nil {
 			log.WithError(err).Fatal("failed to start entry point")
 		}
+		entryPointSet = true
 	}
 
 	// Start the ssh server so that the user can log in to the VM for debugging.
@@ -272,7 +287,16 @@ func main() {
 		log.WithError(err).Fatal("failed to mount tmpfs as writable")
 	}
 
-	log.Info("reaping processes")
+	log.Info("reaping processes...")
 	wg.Wait()
-	log.Info("guestinit successfully exiting")
+
+	// If no entry point is set we treat this as a long running VM and ensure init doesn't exit.
+	if !entryPointSet {
+		stop := make(chan os.Signal, 1)
+		signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+		log.Info("waiting for signal...")
+		<-stop
+
+	}
+	log.Info("guestinit exiting...")
 }

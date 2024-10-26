@@ -34,7 +34,12 @@ guestrootfs: guestinit
 	sudo ./resources/scripts/rootfs/rootfs-from-dockerfile.sh
 
 .PHONY: guest
-guest: guestinit guestrootfs
+guest: guestinit codeserver guestrootfs
+
+.PHONY: codeserver
+codeserver: protos
+	mkdir -p $(OUT_DIR)
+	CGO_ENABLED=0 go build -o $(OUT_DIR)/chv-lambda-codeserver cmd/codeserver/codeserver.go
 
 .PHONY: all
-all: server client guestinit guestrootfs guest
+all: server client guestinit codeserver guestrootfs guest
