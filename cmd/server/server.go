@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gvisor.dev/gvisor/pkg/cleanup"
 )
 
 const (
@@ -41,6 +42,7 @@ const (
 	netDeviceQueueSizeBytes = 256
 	netDeviceId             = "_net0"
 	stateDir                = "/run/chv-lambda"
+	reapVmTimeout           = 20 * time.Second
 )
 
 var (
@@ -213,10 +215,11 @@ func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout ti
 	return <-errCh
 }
 
-func reapVMProcess(vm *vm, logger *log.Entry, timeout time.Duration) error {
+func reapProcess(process *os.Process, logger *log.Entry, timeout time.Duration) error {
 	done := make(chan error, 1)
 	go func() {
-		_, err := vm.process.Wait()
+		log.Info("waiting for VM process to exit")
+		_, err := process.Wait()
 		done <- err
 	}()
 
@@ -230,7 +233,7 @@ func reapVMProcess(vm *vm, logger *log.Entry, timeout time.Duration) error {
 
 	// Attempt to kill the process if it's still running. This should also
 	// trigger the wait in the goroutine preventing it's leak.
-	err := vm.process.Kill()
+	err := process.Kill()
 	if err != nil {
 		return fmt.Errorf("failed to kill VM process: %v", err)
 	}
@@ -238,16 +241,32 @@ func reapVMProcess(vm *vm, logger *log.Entry, timeout time.Duration) error {
 }
 
 func (s *server) createVM(ctx context.Context, vmName string, entryPoint string) error {
+	cleanup := cleanup.Make(func() {
+		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("done")
+	})
+
+	defer func() {
+		// Won't do anything if no error since we call `Release` it at the end.
+		cleanup.Clean()
+	}()
+
 	vmStateDir := getVmStateDirPath(vmName)
 	err := os.MkdirAll(vmStateDir, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create vm state dir: %w", err)
 	}
+	cleanup.Add(func() {
+		if err := os.RemoveAll(vmStateDir); err != nil {
+			log.WithError(err).Errorf("failed to remove vm state dir: %s", vmStateDir)
+		}
+	})
 	log.Infof("CREATED: %v", vmStateDir)
 
+	// This will be cleaned up by the clean up function above nuking the directory.
 	apiSocketPath := getVmSocketPath(vmStateDir, vmName)
 	apiClient := createApiClient(apiSocketPath)
 
+	// This will be cleaned up by the clean up function above nuking the directory.
 	logFilePath := path.Join(vmStateDir, "log")
 	logFile, err := os.Create(logFilePath)
 	if err != nil {
@@ -258,6 +277,11 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	if err != nil {
 		return fmt.Errorf("failed to create tap device: %w", err)
 	}
+	cleanup.Add(func() {
+		if err := s.fountain.DestroyTapDevice(vmName); err != nil {
+			log.WithError(err).Errorf("failed to delete tap device: %s", tapDevice)
+		}
+	})
 
 	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
 	cmd.Stdout = logFile
@@ -273,11 +297,21 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	if err != nil {
 		return fmt.Errorf("error spawning vm: %w", err)
 	}
+	cleanup.Add(func() {
+		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("reap VMM process")
+		reapProcess(cmd.Process, log.WithField("vmname", vmName), reapVmTimeout)
+	})
 
 	err = waitForServer(ctx, apiClient, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("error waiting for vm: %w", err)
 	}
+	cleanup.Add(func() {
+		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("kill VMM process")
+		if err := cmd.Process.Kill(); err != nil {
+			log.WithField("vmname", vmName).Errorf("Error killing vm: %v", err)
+		}
+	})
 	log.WithField("vmname", vmName).Infof("VM started Pid:%d", cmd.Process.Pid)
 
 	guestIP, err := s.ipAllocator.AllocateIP()
@@ -285,6 +319,10 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 		return fmt.Errorf("error allocating guest ip: %w", err)
 	}
 	log.Infof("Allocated IP: %v", guestIP)
+	cleanup.Add(func() {
+		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM", "ip": guestIP.String()}).Info("freeing IP")
+		s.ipAllocator.FreeIP(guestIP.IP)
+	})
 
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
@@ -306,7 +344,6 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	if err != nil {
 		return fmt.Errorf("failed to start VM: %w", err)
 	}
-
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
 		return fmt.Errorf("failed to start VM. bad status: %v", resp)
 	}
@@ -315,10 +352,21 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	if err != nil {
 		return fmt.Errorf("failed to boot VM resp.Body: %v: %w", resp.Body, err)
 	}
-
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
 		return fmt.Errorf("failed to boot VM. bad status: %v", resp)
 	}
+	cleanup.Add(func() {
+		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("shutting down VM")
+		shutdown_req := apiClient.DefaultAPI.ShutdownVM(ctx)
+		resp, err := shutdown_req.Execute()
+		if err != nil {
+			log.WithError(err).Errorf("failed to shutdown VM: %v", err)
+		}
+
+		if resp.StatusCode != 200 && resp.StatusCode != 204 {
+			log.WithError(err).Errorf("failed to shutdown VM. bad status: %v", resp)
+		}
+	})
 
 	vm := &vm{
 		name:          vmName,
@@ -332,6 +380,7 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	}
 	log.Infof("Successfully created VM: %s", vmName)
 	s.vms[vmName] = vm
+	cleanup.Release()
 	return nil
 }
 
@@ -375,7 +424,8 @@ func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VM
 
 func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	vmName := req.GetVmName()
-	log.WithField("vmName", vmName).Infof("received request to stop VM")
+	logger := log.WithField("vmName", vmName)
+	logger.Infof("received request to stop VM")
 
 	vm, exists := s.vms[vmName]
 	if !exists {
@@ -393,6 +443,7 @@ func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMR
 	}
 
 	vm.status = protos.VMStatus_VM_STATUS_STOPPED
+	logger.Infof("VM stopped")
 	return &protos.VMResponse{}, nil
 }
 
@@ -435,7 +486,7 @@ func (s *server) destroyVM(ctx context.Context, vmName string) error {
 		return status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM. bad status: %v", resp))
 	}
 
-	err = reapVMProcess(vm, logger, 20*time.Second)
+	err = reapProcess(vm.process, logger, reapVmTimeout)
 	if err != nil {
 		logger.Warnf("failed to reap VM process: %v", err)
 	}
