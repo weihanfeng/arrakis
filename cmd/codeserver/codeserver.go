@@ -2,12 +2,30 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
 type codeServer struct {
+}
+
+type ExecuteRequest struct {
+	Files        map[string]string   `json:"files"`
+	EntryPoint   string              `json:"entry_point"`
+	Dependencies map[string][]string `json:"dependencies"`
+	Timeout      int                 `json:"timeout"`
+}
+
+type ExecuteResponse struct {
+	Output string `json:"output,omitempty"`
+	Error  string `json:"error,omitempty"`
+	Status string `json:"status"`
 }
 
 func (cs *codeServer) indexRoute(w http.ResponseWriter, r *http.Request) {
@@ -19,9 +37,94 @@ func (cs *codeServer) indexRoute(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func (cs *codeServer) executeRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ExecuteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	// Create a temporary directory for the files
+	tempDir, err := os.MkdirTemp("/tmp", "execute-*")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to create temporary directory: %v", err.Error()), http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Write files to the temporary directory
+	for filename, content := range req.Files {
+		filePath := filepath.Join(tempDir, filename)
+		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+			http.Error(w, fmt.Sprintf("failed to write file: %v", err.Error()), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Install dependencies
+	if pipDeps, ok := req.Dependencies["pip"]; ok {
+		cmd := exec.Command("pip", append([]string{"install"}, pipDeps...)...)
+		if err := cmd.Run(); err != nil {
+			http.Error(w, fmt.Sprintf("failed to install dependencies: %v", err.Error()), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Execute the Python script
+	cmd := exec.Command("python3", filepath.Join(tempDir, req.EntryPoint))
+	cmd.Dir = tempDir
+
+	outputChan := make(chan []byte)
+	errorChan := make(chan error)
+
+	go func() {
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			errorChan <- err
+		} else {
+			outputChan <- output
+		}
+	}()
+
+	select {
+	case output := <-outputChan:
+		response := ExecuteResponse{
+			Output: string(output),
+			Status: "success",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+
+	case err := <-errorChan:
+		response := ExecuteResponse{
+			Error:  "Execution error: " + err.Error(),
+			Status: "error",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+
+	case <-time.After(time.Duration(req.Timeout) * time.Second):
+		cmd.Process.Kill()
+		response := ExecuteResponse{
+			Error:  "Execution timed out",
+			Status: "timeout",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestTimeout)
+		json.NewEncoder(w).Encode(response)
+	}
+}
+
 func initializeRoutes(cs *codeServer) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", cs.indexRoute)
+	mux.HandleFunc("POST /execute", cs.executeRoute)
 	return mux
 }
 
@@ -37,6 +140,6 @@ func main() {
 
 	err := server.ListenAndServe()
 	if err != nil {
-		log.WithError(err).Error("codeserver exited with: %v", err)
+		log.WithError(err).Errorf("codeserver exited with: %v", err)
 	}
 }
