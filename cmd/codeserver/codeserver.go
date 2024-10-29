@@ -67,21 +67,46 @@ func (cs *codeServer) executeRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Install dependencies
+	venvPythonPath := ""
 	if pipDeps, ok := req.Dependencies["pip"]; ok {
-		cmd := exec.Command("pip", append([]string{"install"}, pipDeps...)...)
+		venvDir := filepath.Join(tempDir, "venv")
+
+		// Create virtual environment
+		cmd := exec.Command("python3", "-m", "venv", venvDir)
+		if err := cmd.Run(); err != nil {
+			http.Error(w, fmt.Sprintf("failed to create virtual environment: %v", err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		// Activate virtual environment and install dependencies
+		pipPath := filepath.Join(venvDir, "bin", "pip")
+		cmd = exec.Command(pipPath, append([]string{
+			"install",
+			"--no-cache-dir",
+		}, pipDeps...)...)
+
 		if err := cmd.Run(); err != nil {
 			http.Error(w, fmt.Sprintf("failed to install dependencies: %v", err.Error()), http.StatusInternalServerError)
 			return
 		}
+
+		// Set the PATH to use the virtual environment's Python
+		venvPythonPath = filepath.Join(venvDir, "bin", "python")
+		os.Setenv("PATH", filepath.Join(venvDir, "bin")+":"+os.Getenv("PATH"))
 	}
 
 	// Execute the Python script
-	cmd := exec.Command("python3", filepath.Join(tempDir, req.EntryPoint))
+	var pythonPath string
+	if venvPythonPath == "" {
+		pythonPath = "python3"
+	} else {
+		pythonPath = venvPythonPath
+	}
+	cmd := exec.Command(pythonPath, filepath.Join(tempDir, req.EntryPoint))
 	cmd.Dir = tempDir
 
 	outputChan := make(chan []byte)
 	errorChan := make(chan error)
-
 	go func() {
 		output, err := cmd.CombinedOutput()
 		if err != nil {

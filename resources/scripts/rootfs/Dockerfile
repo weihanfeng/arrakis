@@ -47,6 +47,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     tzdata \
     tini \
+    python3-venv \
+    python3-pip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

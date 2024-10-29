@@ -20,6 +20,7 @@ const (
 	paths          = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/bin/versions/node/v22.9.0/bin"
 	bashBin        = "/bin/bash"
 	serverIpEnvVar = "SERVER_IP"
+	tmpfsSize      = "1024M"
 )
 
 // runCommandInBg runs `cmd` in a goroutine.
@@ -282,7 +283,7 @@ func main() {
 		log.WithError(err).Fatal("failed to remount root as readonly")
 	}
 
-	err = mount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "size=128M")
+	err = mount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "size="+tmpfsSize)
 	if err != nil {
 		log.WithError(err).Fatal("failed to mount tmpfs as writable")
 	}
