@@ -87,16 +87,16 @@ func startVM(serverAddr string, vmName string, entryPoint string) error {
 	client := pb.NewVMManagementServiceClient(conn)
 	ctx := context.Background()
 
-	request := &pb.VMRequest{
+	request := &pb.StartVMRequest{
 		VmName:     vmName,
 		EntryPoint: entryPoint,
 	}
-	_, err = client.StartVM(ctx, request)
+	resp, err := client.StartVM(ctx, request)
 	if err != nil {
 		return fmt.Errorf("error starting: %w", err)
 	}
 
-	log.Infof("Successfully started VM: %s", vmName)
+	log.Infof("Successfully started VM: %v", resp.VmInfo)
 	return nil
 }
 

@@ -5,12 +5,23 @@ package protos;
 option go_package = "../protos";
 
 service VMManagementService {
-  rpc StartVM (VMRequest) returns (VMResponse) {}
+  rpc StartVM (StartVMRequest) returns (StartVMResponse) {}
   rpc StopVM (VMRequest) returns (VMResponse) {}
   rpc DestroyVM (VMRequest) returns (VMResponse) {}
   rpc DestroyAllVMs (DestroyAllVMsRequest) returns (VMResponse) {}
   rpc ListAllVMs (ListAllVMsRequest) returns (ListAllVMsResponse) {}
   rpc ListVM (ListVMRequest) returns (ListVMResponse) {}
+}
+
+message StartVMRequest {
+  string vm_name = 1;
+  string entry_point = 2;
+  // Next Id: 3.
+}
+
+message StartVMResponse {
+  VMInfo vm_info = 1;
+  // Next ID: 2.
 }
 
 message VMRequest {

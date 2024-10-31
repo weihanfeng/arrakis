@@ -392,7 +392,7 @@ type server struct {
 	sigChan     chan os.Signal
 }
 
-func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
+func (s *server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*protos.StartVMResponse, error) {
 	vmName := req.GetVmName()
 	entryPoint := req.GetEntryPoint()
 	logger := log.WithField("vmName", vmName)
@@ -416,10 +416,11 @@ func (s *server) StartVM(ctx context.Context, req *protos.VMRequest) (*protos.VM
 			logger.Errorf("failed to start: %v", err)
 			return nil, err
 		}
+		vm = s.vms[vmName]
 	}
 
 	logger.Infof("VM started")
-	return &protos.VMResponse{}, nil
+	return &protos.StartVMResponse{VmInfo: &protos.VMInfo{VmName: vmName, Ip: vm.ip.String(), Status: vm.status, TapDeviceName: vm.tapDevice}}, nil
 }
 
 func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
