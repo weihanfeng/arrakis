@@ -26,24 +26,20 @@ const (
 
 // runCommandInBg runs `cmd` in a goroutine.
 func runCommandInBg(cmd *exec.Cmd, wg *sync.WaitGroup) error {
-	log.Infof("XXX: START runCommand: %v", cmd)
-	err := cmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start cmd: %v err: %w", cmd, err)
-	}
-
 	wg.Add(1)
 	go func() {
 		defer func() {
-			log.Infof("XXX: END runCommand: %v", cmd)
+			log.Infof("END cmd: %v", cmd)
 			wg.Done()
 		}()
+		log.Infof("START cmd: %v", cmd)
 
-		err = cmd.Wait()
+		err := cmd.Run()
 		if err != nil {
-			log.WithError(err).Errorf("failed to wait for cmd: %v err: %v", cmd, err)
+			log.WithError(err).Errorf("failed to run cmd: %v err: %v", cmd, err)
 			return
 		}
+		log.Infof("cmd: %v succeeded", cmd)
 	}()
 	return nil
 }
