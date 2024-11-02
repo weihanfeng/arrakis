@@ -217,6 +217,17 @@ func startNodeServerInBg(wg *sync.WaitGroup) error {
 	return nil
 }
 
+func startCodeServerInBg(wg *sync.WaitGroup) error {
+	cmd := exec.Command("/opt/custom_scripts/chv-lambda-codeserver")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := runCommandInBg(cmd, wg)
+	if err != nil {
+		return fmt.Errorf("failed to start code server in bg: %w", err)
+	}
+	return nil
+}
+
 func main() {
 	log.Infof("starting guestinit")
 
@@ -292,6 +303,13 @@ func main() {
 		log.WithError(err).Fatal("failed to start ssh server")
 	}
 
+	// This will expose a REST API to execute Python and TS code.
+	err = startCodeServerInBg(&wg)
+	if err != nil {
+		log.WithError(err).Fatal("failed to start code server")
+	}
+
+	// This is a React project that is used by the code server to render UI components.
 	err = startNodeServerInBg(&wg)
 	if err != nil {
 		log.WithError(err).Fatal("failed to start node server")
