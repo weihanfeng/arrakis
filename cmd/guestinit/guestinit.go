@@ -301,19 +301,6 @@ func main() {
 		log.WithError(err).Fatal("failed to start node server")
 	}
 
-	/*
-		// Mount as ro so that we can't be corrupted by malicious code.
-		err = remountRootAsReadOnly()
-		if err != nil {
-			log.WithError(err).Fatal("failed to remount root as readonly")
-		}
-	*/
-
-	err = mount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "size="+tmpfsSize)
-	if err != nil {
-		log.WithError(err).Fatal("failed to mount tmpfs as writable")
-	}
-
 	log.Info("reaping processes...")
 	wg.Wait()
 
