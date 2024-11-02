@@ -78,3 +78,10 @@ COPY resources/scripts/rootfs/server.py /opt/custom_scripts/.
 
 # Make sure the scripts are executable
 RUN chmod +x /opt/custom_scripts/*
+
+# Install the server that will execute react code.
+ENV PATH=$PATH:/usr/bin/versions/node/v22.11.0/bin
+# TODO: Giving absolute paths to `npm create` isn't respected, hence we use WORKDIR.
+WORKDIR /opt/custom_scripts/node_code_server
+RUN npm create vite@latest . -- --template react-ts 2>&1
+RUN npm install 2>&1

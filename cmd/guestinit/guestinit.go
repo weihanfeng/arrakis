@@ -17,10 +17,11 @@ const (
 	ifname = "eth0"
 	ipBin  = "/usr/bin/ip"
 	// Node is already installed on the rootfs. But we do need to add it to the path.
-	paths          = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/bin/versions/node/v22.9.0/bin"
+	paths          = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/bin/versions/node/v22.11.0/bin"
 	bashBin        = "/bin/bash"
 	serverIpEnvVar = "SERVER_IP"
 	tmpfsSize      = "1024M"
+	nodeServerDir  = "/opt/custom_scripts/node_code_server"
 )
 
 // runCommandInBg runs `cmd` in a goroutine.
@@ -203,6 +204,23 @@ func remountRootAsReadOnly() error {
 	return cmd.Run()
 }
 
+func startNodeServerInBg(wg *sync.WaitGroup) error {
+	cmd := exec.Command("npm", "run", "dev", "--", "--host", "0.0.0.0")
+	cmd.Dir = nodeServerDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// We need "npm" and other node things in the path.
+	currentPath := os.Getenv("PATH")
+	combinedPath := currentPath + ":" + paths
+	cmd.Env = append(os.Environ(), "PATH="+combinedPath)
+	err := runCommandInBg(cmd, wg)
+	if err != nil {
+		return fmt.Errorf("failed to start node server in bg: %w", err)
+	}
+	return nil
+}
+
 func main() {
 	log.Infof("starting guestinit")
 
@@ -236,6 +254,7 @@ func main() {
 	if err != nil {
 		log.WithError(err).Fatalf("Error setting PATH")
 	}
+	log.Infof("PATH set to: %s", os.Getenv("PATH"))
 
 	guestCIDR, gatewayIP, err := parseNetworkingMetadata()
 	if err != nil {
@@ -277,11 +296,18 @@ func main() {
 		log.WithError(err).Fatal("failed to start ssh server")
 	}
 
-	// Mount as ro so that we can't be corrupted by malicious code.
-	err = remountRootAsReadOnly()
+	err = startNodeServerInBg(&wg)
 	if err != nil {
-		log.WithError(err).Fatal("failed to remount root as readonly")
+		log.WithError(err).Fatal("failed to start node server")
 	}
+
+	/*
+		// Mount as ro so that we can't be corrupted by malicious code.
+		err = remountRootAsReadOnly()
+		if err != nil {
+			log.WithError(err).Fatal("failed to remount root as readonly")
+		}
+	*/
 
 	err = mount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "size="+tmpfsSize)
 	if err != nil {

@@ -11,6 +11,7 @@ ROOTFS_TAR=${OUTPUT_FOLDER}/"ubuntu-rootfs.tar"
 ROOTFS_DIR=${OUTPUT_FOLDER}/"rootfs"
 ROOTFS_EXT4_IMAGE=${OUTPUT_FOLDER}/"ubuntu-ext4.img"
 MOUNT_DIR="/tmp/mnt"
+DISK_SIZE_IN_MB=2048
 
 # Cleanup function
 cleanup() {
@@ -34,7 +35,7 @@ docker create --name ${DOCKER_CONTAINER_NAME} ${DOCKER_IMAGE_NAME}
 docker export --output=${ROOTFS_TAR} ${DOCKER_CONTAINER_NAME}
 docker rm ${DOCKER_CONTAINER_NAME}
 
-dd if=/dev/zero of=${ROOTFS_EXT4_IMAGE} bs=1M count=1024
+dd if=/dev/zero of=${ROOTFS_EXT4_IMAGE} bs=1M count=${DISK_SIZE_IN_MB}
 mkfs.ext4 ${ROOTFS_EXT4_IMAGE}
 mkdir -p ${MOUNT_DIR}
 # TODO: This requires root. Can be done without root mkfs.ext4 -D but that doesn't preserve
