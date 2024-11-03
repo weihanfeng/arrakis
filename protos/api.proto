@@ -57,7 +57,8 @@ message VMInfo {
   string ip = 2;
   string tap_device_name = 3;
   VMStatus status = 4;
-  // Next Id: 5.
+  string code_server_port = 5;
+  // Next Id: 6.
 }
 
 message ListAllVMsResponse {

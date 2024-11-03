@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -16,10 +17,11 @@ type codeServer struct {
 }
 
 type ExecuteRequest struct {
-	Files        map[string]string   `json:"files"`
-	EntryPoint   string              `json:"entry_point"`
-	Dependencies map[string][]string `json:"dependencies"`
-	Timeout      int                 `json:"timeout"`
+	Lang         string            `json:"lang"`
+	Files        map[string]string `json:"files"`
+	EntryPoint   string            `json:"entry_point"`
+	Dependencies []string          `json:"dependencies"`
+	Timeout      int               `json:"timeout"`
 }
 
 type ExecuteResponse struct {
@@ -37,19 +39,7 @@ func (cs *codeServer) indexRoute(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func (cs *codeServer) executeRoute(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req ExecuteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("failed to decode request: %v", err.Error()), http.StatusBadRequest)
-		return
-	}
-
-	// Create a temporary directory for the files
+func (cs *codeServer) executePythonCode(req *ExecuteRequest, w http.ResponseWriter, r *http.Request) {
 	tempDir, err := os.MkdirTemp("/tmp", "execute-*")
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to create temporary directory: %v", err.Error()), http.StatusInternalServerError)
@@ -68,7 +58,7 @@ func (cs *codeServer) executeRoute(w http.ResponseWriter, r *http.Request) {
 
 	// Install dependencies
 	venvPythonPath := ""
-	if pipDeps, ok := req.Dependencies["pip"]; ok {
+	if len(req.Dependencies) > 0 {
 		venvDir := filepath.Join(tempDir, "venv")
 
 		// Create virtual environment
@@ -83,7 +73,7 @@ func (cs *codeServer) executeRoute(w http.ResponseWriter, r *http.Request) {
 		cmd = exec.Command(pipPath, append([]string{
 			"install",
 			"--no-cache-dir",
-		}, pipDeps...)...)
+		}, req.Dependencies...)...)
 
 		if err := cmd.Run(); err != nil {
 			http.Error(w, fmt.Sprintf("failed to install dependencies: %v", err.Error()), http.StatusInternalServerError)
@@ -144,6 +134,36 @@ func (cs *codeServer) executeRoute(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusRequestTimeout)
 		json.NewEncoder(w).Encode(response)
 	}
+}
+
+func (cs *codeServer) executeTypescriptCode(req *ExecuteRequest, w http.ResponseWriter, r *http.Request) {
+	// TODO: Unimplemented.
+}
+
+func (cs *codeServer) executeRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ExecuteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	lang := strings.ToLower(req.Lang)
+	if lang != "python" && lang != "typescript" {
+		http.Error(w, fmt.Sprintf("unsupported language: %s", lang), http.StatusBadRequest)
+		return
+	}
+
+	if lang == "python" {
+		cs.executePythonCode(&req, w, r)
+	} else {
+		cs.executeTypescriptCode(&req, w, r)
+	}
+
 }
 
 func initializeRoutes(cs *codeServer) *http.ServeMux {

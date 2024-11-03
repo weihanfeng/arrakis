@@ -420,7 +420,7 @@ func (s *server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*prot
 	}
 
 	logger.Infof("VM started")
-	return &protos.StartVMResponse{VmInfo: &protos.VMInfo{VmName: vmName, Ip: vm.ip.String(), Status: vm.status, TapDeviceName: vm.tapDevice}}, nil
+	return &protos.StartVMResponse{VmInfo: &protos.VMInfo{VmName: vmName, Ip: vm.ip.String(), CodeServerPort: "8080", Status: vm.status, TapDeviceName: vm.tapDevice}}, nil
 }
 
 func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
