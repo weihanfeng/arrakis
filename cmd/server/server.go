@@ -588,7 +588,7 @@ func main() {
 		log.WithError(err).Fatal("failed to setup networking on the host")
 	}
 
-	lis, err := net.Listen("tcp", ":50051")
+	lis, err := net.Listen("tcp", "127.0.0.1:6000")
 	if err != nil {
 		log.WithError(err).Fatalf("failed to listen")
 	}
