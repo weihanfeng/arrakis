@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path"
 	"strings"
 	"syscall"
@@ -16,11 +15,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/abshkbh/chv-lambda/cmd/server/fountain"
-	"github.com/abshkbh/chv-lambda/cmd/server/ipallocator"
 	"github.com/abshkbh/chv-lambda/openapi"
 	"github.com/abshkbh/chv-lambda/out/protos"
-	"google.golang.org/grpc"
+	"github.com/abshkbh/chv-lambda/pkg/server/fountain"
+	"github.com/abshkbh/chv-lambda/pkg/server/ipallocator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -35,13 +33,9 @@ const (
 	consolePortMode = "Off"
 	chvBinPath      = "/home/maverick/projects/chv-lambda/resources/bin/cloud-hypervisor"
 
-	bridgeName              = "br0"
-	bridgeIP                = "10.20.1.1/24"
-	bridgeSubnet            = "10.20.1.0/24"
 	numNetDeviceQueues      = 2
 	netDeviceQueueSizeBytes = 256
 	netDeviceId             = "_net0"
-	stateDir                = "/run/chv-lambda"
 	reapVmTimeout           = 20 * time.Second
 )
 
@@ -156,7 +150,7 @@ func setupBridgeAndFirewall(backupFile string, bridgeName string, bridgeIP strin
 	return nil
 }
 
-func getVmStateDirPath(vmName string) string {
+func getVmStateDirPath(stateDir string, vmName string) string {
 	return path.Join(stateDir, vmName)
 }
 
@@ -240,7 +234,31 @@ func reapProcess(process *os.Process, logger *log.Entry, timeout time.Duration) 
 	return fmt.Errorf("VM process was force killed after timeout")
 }
 
-func (s *server) createVM(ctx context.Context, vmName string, entryPoint string) error {
+func NewServer(stateDir string, bridgeName string, bridgeIP string, bridgeSubnet string) (*Server, error) {
+	err := os.MkdirAll(stateDir, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vm state dir: %w", err)
+	}
+
+	ipBackupFile := fmt.Sprintf("/tmp/iptables-backup-%s.rules", time.Now().Format(time.UnixDate))
+	err = setupBridgeAndFirewall(ipBackupFile, bridgeName, bridgeIP, bridgeSubnet)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup networking on the host: %w", err)
+	}
+
+	ipAllocator, err := ipallocator.NewIPAllocator(bridgeSubnet)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ip allocator: %w", err)
+	}
+
+	return &Server{
+		vms:         make(map[string]*vm),
+		fountain:    fountain.NewFountain(bridgeName),
+		ipAllocator: ipAllocator,
+	}, nil
+}
+
+func (s *Server) createVM(ctx context.Context, vmName string, entryPoint string) error {
 	cleanup := cleanup.Make(func() {
 		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("done")
 	})
@@ -250,7 +268,7 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 		cleanup.Clean()
 	}()
 
-	vmStateDir := getVmStateDirPath(vmName)
+	vmStateDir := getVmStateDirPath(s.stateDir, vmName)
 	err := os.MkdirAll(vmStateDir, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create vm state dir: %w", err)
@@ -327,7 +345,7 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
 			Kernel:  String(kernelPath),
-			Cmdline: String(getKernelCmdLine(bridgeIP, guestIP.String(), entryPoint)),
+			Cmdline: String(getKernelCmdLine(s.bridgeIP, guestIP.String(), entryPoint)),
 		},
 		Disks:   []openapi.DiskConfig{{Path: rootfsPath}},
 		Cpus:    &openapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
@@ -384,15 +402,17 @@ func (s *server) createVM(ctx context.Context, vmName string, entryPoint string)
 	return nil
 }
 
-type server struct {
+type Server struct {
 	protos.UnimplementedVMManagementServiceServer
 	vms         map[string]*vm
 	fountain    *fountain.Fountain
 	ipAllocator *ipallocator.IPAllocator
-	sigChan     chan os.Signal
+	bridgeIP    string
+	// Dir where all the VMs' state is stored.
+	stateDir string
 }
 
-func (s *server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*protos.StartVMResponse, error) {
+func (s *Server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*protos.StartVMResponse, error) {
 	vmName := req.GetVmName()
 	entryPoint := req.GetEntryPoint()
 	logger := log.WithField("vmName", vmName)
@@ -423,7 +443,7 @@ func (s *server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*prot
 	return &protos.StartVMResponse{VmInfo: &protos.VMInfo{VmName: vmName, Ip: vm.ip.String(), CodeServerPort: "8080", Status: vm.status, TapDeviceName: vm.tapDevice}}, nil
 }
 
-func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
+func (s *Server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	vmName := req.GetVmName()
 	logger := log.WithField("vmName", vmName)
 	logger.Infof("received request to stop VM")
@@ -448,7 +468,7 @@ func (s *server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMR
 	return &protos.VMResponse{}, nil
 }
 
-func (s *server) destroyVM(ctx context.Context, vmName string) error {
+func (s *Server) destroyVM(ctx context.Context, vmName string) error {
 	log.WithField("vmName", vmName).Info("destroyVM")
 	logger := log.WithField("vmName", vmName)
 
@@ -511,7 +531,7 @@ func (s *server) destroyVM(ctx context.Context, vmName string) error {
 	return nil
 }
 
-func (s *server) destroyAllVMs(ctx context.Context) error {
+func (s *Server) destroyAllVMs(ctx context.Context) error {
 	log.Info("destroying all VMs")
 	var finalErr error
 	for _, vm := range s.vms {
@@ -524,7 +544,7 @@ func (s *server) destroyAllVMs(ctx context.Context) error {
 	return finalErr
 }
 
-func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
+func (s *Server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
 	log.Infof("received request to destroy VM")
 	vmName := req.GetVmName()
 	err := s.destroyVM(ctx, vmName)
@@ -534,7 +554,7 @@ func (s *server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.
 	return &protos.VMResponse{}, nil
 }
 
-func (s *server) DestroyAllVMs(ctx context.Context, req *protos.DestroyAllVMsRequest) (*protos.VMResponse, error) {
+func (s *Server) DestroyAllVMs(ctx context.Context, req *protos.DestroyAllVMsRequest) (*protos.VMResponse, error) {
 	log.Infof("received request to destroy all VMs")
 	err := s.destroyAllVMs(ctx)
 	if err != nil {
@@ -543,7 +563,7 @@ func (s *server) DestroyAllVMs(ctx context.Context, req *protos.DestroyAllVMsReq
 	return &protos.VMResponse{}, nil
 }
 
-func (s *server) ListAllVMs(ctx context.Context, req *protos.ListAllVMsRequest) (*protos.ListAllVMsResponse, error) {
+func (s *Server) ListAllVMs(ctx context.Context, req *protos.ListAllVMsRequest) (*protos.ListAllVMsResponse, error) {
 	resp := &protos.ListAllVMsResponse{}
 	var vms []*protos.VMInfo
 	for _, vm := range s.vms {
@@ -559,7 +579,7 @@ func (s *server) ListAllVMs(ctx context.Context, req *protos.ListAllVMsRequest) 
 	return resp, nil
 }
 
-func (s *server) ListVM(ctx context.Context, req *protos.ListVMRequest) (*protos.ListVMResponse, error) {
+func (s *Server) ListVM(ctx context.Context, req *protos.ListVMRequest) (*protos.ListVMResponse, error) {
 	vmName := req.GetVmName()
 	vm, ok := s.vms[vmName]
 	if !ok {
@@ -574,54 +594,4 @@ func (s *server) ListVM(ctx context.Context, req *protos.ListVMRequest) (*protos
 		TapDeviceName: vm.tapDevice,
 	}
 	return resp, nil
-}
-
-func main() {
-	err := os.MkdirAll(stateDir, 0755)
-	if err != nil {
-		log.WithError(err).Fatal("failed to create vm state dir")
-	}
-
-	ipBackupFile := fmt.Sprintf("/tmp/iptables-backup-%s.rules", time.Now().Format(time.UnixDate))
-	err = setupBridgeAndFirewall(ipBackupFile, bridgeName, bridgeIP, bridgeSubnet)
-	if err != nil {
-		log.WithError(err).Fatal("failed to setup networking on the host")
-	}
-
-	lis, err := net.Listen("tcp", "127.0.0.1:6000")
-	if err != nil {
-		log.WithError(err).Fatalf("failed to listen")
-	}
-
-	ipAllocator, err := ipallocator.NewIPAllocator(bridgeSubnet)
-	if err != nil {
-		log.WithError(err).Fatalf("failed to create ip allocator")
-	}
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	s := grpc.NewServer()
-	apiServer := &server{
-		vms:         make(map[string]*vm),
-		fountain:    fountain.NewFountain(bridgeName),
-		ipAllocator: ipAllocator,
-		sigChan:     sigChan,
-	}
-
-	// Set up signal handler.
-	go func() {
-		log.Infof("waiting for signal")
-		sig := <-apiServer.sigChan
-		log.Infof("received signal: %v", sig)
-		s.GracefulStop()
-		log.Infof("gracefully stopped")
-	}()
-
-	protos.RegisterVMManagementServiceServer(s, apiServer)
-	log.Printf("server Pid:%d listening at %v", os.Getpid(), lis.Addr())
-	if err := s.Serve(lis); err != nil {
-		log.WithError(err).Fatalf("failed to serve")
-	}
-	apiServer.destroyAllVMs(context.Background())
-	log.WithError(err).Info("server exited")
 }
