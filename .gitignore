@@ -1,5 +1,3 @@
-resources/bin
-out
+resources/bin/
+out/
 *rules
-main
-*pb.go
