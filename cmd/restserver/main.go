@@ -147,5 +147,6 @@ func main() {
 	if err := srv.Shutdown(context.Background()); err != nil {
 		log.Fatalf("Server shutdown failed: %v", err)
 	}
+	vmServer.DestroyAllVMs(context.Background(), &protos.DestroyAllVMsRequest{})
 	log.Println("Server stopped")
 }
