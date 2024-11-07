@@ -17,14 +17,6 @@ import (
 	"github.com/abshkbh/chv-lambda/pkg/server"
 )
 
-const (
-	restServerPort = "7000"
-	stateDir       = "/run/chv-lambda"
-	bridgeName     = "br0"
-	bridgeIP       = "10.20.1.1/24"
-	bridgeSubnet   = "10.20.1.0/24"
-)
-
 type restServer struct {
 	vmServer *server.Server
 }
@@ -116,7 +108,7 @@ func (s *restServer) listVM(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	// Create the VM server
-	vmServer, err := server.NewServer(stateDir, bridgeName, bridgeIP, bridgeSubnet)
+	vmServer, err := server.NewServer(config.StateDir, config.BridgeName, config.BridgeIP, config.BridgeSubnet)
 	if err != nil {
 		log.Fatalf("Failed to create VM server: %v", err)
 	}
