@@ -255,6 +255,8 @@ func NewServer(stateDir string, bridgeName string, bridgeIP string, bridgeSubnet
 		vms:         make(map[string]*vm),
 		fountain:    fountain.NewFountain(bridgeName),
 		ipAllocator: ipAllocator,
+		stateDir:    stateDir,
+		bridgeIP:    bridgeIP,
 	}, nil
 }
 
