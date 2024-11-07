@@ -29,6 +29,11 @@ func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.VmName == "" {
+		http.Error(w, "Empty vm name", http.StatusBadRequest)
+		return
+	}
+
 	resp, err := s.vmServer.StartVM(r.Context(), &req)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to start VM: %v", err), http.StatusInternalServerError)
