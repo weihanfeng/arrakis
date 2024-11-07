@@ -13,10 +13,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	pb "github.com/abshkbh/chv-lambda/out/protos"
+	"github.com/abshkbh/chv-lambda/pkg/config"
 )
 
 const (
-	defaultServerAddress = "localhost:50051"
+	defaultServerAddress = config.GrpcServerAddr + ":" + config.GrpcServerPort
 )
 
 func stopVM(serverAddr string, vmName string) error {
