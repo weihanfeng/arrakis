@@ -17,6 +17,7 @@ import (
 
 	"github.com/abshkbh/chv-lambda/openapi"
 	"github.com/abshkbh/chv-lambda/out/protos"
+	"github.com/abshkbh/chv-lambda/pkg/config"
 	"github.com/abshkbh/chv-lambda/pkg/server/fountain"
 	"github.com/abshkbh/chv-lambda/pkg/server/ipallocator"
 	"google.golang.org/grpc/codes"
@@ -95,6 +96,30 @@ func bridgeExists(bridgeName string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+func forwardPortToCodeServerInVM(vmIP string, port string) error {
+	cmd := exec.Command(
+		"iptables",
+		"-t",
+		"nat",
+		"-A",
+		"PREROUTING",
+		"-p",
+		"tcp",
+		"--dport",
+		string(port),
+		"-j",
+		"DNAT",
+		"--to-destination",
+		fmt.Sprintf("%s:%s", vmIP, port),
+	)
+
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("error forwarding port: %w", err)
+	}
+	return nil
 }
 
 // setupBridgeAndFirewall sets up a bridge and firewall rules for the given bridge name, IP address, and subnet.
@@ -344,6 +369,23 @@ func (s *Server) createVM(ctx context.Context, vmName string, entryPoint string)
 		s.ipAllocator.FreeIP(guestIP.IP)
 	})
 
+	// Forward port on the host to the codeserver.
+	err = forwardPortToCodeServerInVM(guestIP.IP.String(), config.CodeServerPort)
+	if err != nil {
+		return fmt.Errorf("failed to forward port in the code server: %w", err)
+	}
+	cleanup.Add(func() {
+		log.WithFields(
+			log.Fields{
+				"vmname":          vmName,
+				"action":          "cleanup",
+				"api":             "createVM",
+				"ip":              guestIP.String(),
+				"codeserver_port": config.CodeServerPort},
+		).Info("deleting codeserver port forward")
+		s.ipAllocator.FreeIP(guestIP.IP)
+	})
+
 	vmConfig := openapi.VmConfig{
 		Payload: openapi.PayloadConfig{
 			Kernel:  String(kernelPath),
@@ -442,7 +484,7 @@ func (s *Server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*prot
 	}
 
 	logger.Infof("VM started")
-	return &protos.StartVMResponse{VmInfo: &protos.VMInfo{VmName: vmName, Ip: vm.ip.String(), CodeServerPort: "8080", Status: vm.status, TapDeviceName: vm.tapDevice}}, nil
+	return &protos.StartVMResponse{VmInfo: &protos.VMInfo{VmName: vmName, Ip: vm.ip.String(), CodeServerPort: config.CodeServerPort, Status: vm.status, TapDeviceName: vm.tapDevice}}, nil
 }
 
 func (s *Server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {

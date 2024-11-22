@@ -22,6 +22,7 @@ const (
 	serverIpEnvVar = "SERVER_IP"
 	tmpfsSize      = "1024M"
 	nodeServerDir  = "/opt/custom_scripts/node_code_server"
+	codeServerPort = "4030"
 )
 
 // runCommandInBg runs `cmd` in a goroutine.

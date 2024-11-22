@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abshkbh/chv-lambda/pkg/config"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -179,7 +181,7 @@ func main() {
 	router := initializeRoutes(cs)
 
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    config.CodeServerPort,
 		Handler: router,
 	}
 
