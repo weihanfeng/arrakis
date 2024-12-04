@@ -66,6 +66,7 @@ RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 # Helper scripts.
 COPY out/chv-guestinit /opt/custom_scripts/guestinit
 COPY out/chv-lambda-codeserver /opt/custom_scripts/chv-lambda-codeserver
+COPY out/chv-lambda-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
 COPY resources/scripts/rootfs/check-guest-networking.sh /opt/custom_scripts/.
 COPY resources/scripts/rootfs/setup-guest-networking.sh /opt/custom_scripts/.
 COPY resources/scripts/rootfs/init.sh /opt/custom_scripts/.

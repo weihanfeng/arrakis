@@ -12,6 +12,8 @@ require (
 	google.golang.org/protobuf v1.34.1
 )
 
+require github.com/mattn/go-shellwords v1.0.12 // indirect
+
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
