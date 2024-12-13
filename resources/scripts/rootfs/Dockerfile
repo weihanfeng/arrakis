@@ -53,13 +53,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencies for executing TS and React code.
-ENV PATH=$PATH:/usr/bin/versions/node/v22.11.0/bin
-# TODO: Giving absolute paths to `npm create` isn't respected, hence we use WORKDIR.
-WORKDIR /opt/custom_scripts/node_code_server
-RUN npm create vite@latest . -- --template react-ts 2>&1
-RUN npm install 2>&1
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
 RUN . ~/.nvm/nvm.sh && nvm install 22
+ENV PATH=$PATH:/usr/bin/versions/node/v22.11.0/bin
 
 # Create a directory for your custom scripts
 RUN mkdir -p /opt/custom_scripts
@@ -71,10 +67,10 @@ RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 ##############
 COPY out/chv-guestinit /opt/custom_scripts/guestinit
 
-# Optional binary that helps execute code inside the VM.
+# Optional binary that helps execute code.
 #COPY out/chv-lambda-codeserver /opt/custom_scripts/chv-lambda-codeserver
 
-# Optional binary that helps execute shell commands inside the VM.
+# Optional binary that helps execute shell commands.
 #COPY out/chv-lambda-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
 ##############
 
