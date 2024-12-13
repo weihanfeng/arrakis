@@ -67,15 +67,6 @@ RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 COPY out/chv-guestinit /opt/custom_scripts/guestinit
 COPY out/chv-lambda-codeserver /opt/custom_scripts/chv-lambda-codeserver
 COPY out/chv-lambda-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
-COPY resources/scripts/rootfs/check-guest-networking.sh /opt/custom_scripts/.
-COPY resources/scripts/rootfs/setup-guest-networking.sh /opt/custom_scripts/.
-COPY resources/scripts/rootfs/init.sh /opt/custom_scripts/.
-COPY resources/scripts/rootfs/vsock-test-server.py /opt/custom_scripts/.
-
-# Custom Node and Python scripts can be put under "/opt/custom_scripts" and passed as "entry_point"
-# in the client.
-COPY resources/scripts/rootfs/server.js /opt/custom_scripts/.
-COPY resources/scripts/rootfs/server.py /opt/custom_scripts/.
 
 # Make sure the scripts are executable
 RUN chmod +x /opt/custom_scripts/*
