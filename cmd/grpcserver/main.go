@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -16,28 +15,10 @@ import (
 )
 
 const (
-	numBootVcpus    = 1
-	memorySizeBytes = 512 * 1024 * 1024
-	// Case sensitive.
-	serialPortMode = "Tty"
-	// Case sensitive.
-	consolePortMode = "Off"
-	chvBinPath      = "/home/maverick/projects/chv-lambda/resources/bin/cloud-hypervisor"
-
-	bridgeName              = "br0"
-	bridgeIP                = "10.20.1.1/24"
-	bridgeSubnet            = "10.20.1.0/24"
-	numNetDeviceQueues      = 2
-	netDeviceQueueSizeBytes = 256
-	netDeviceId             = "_net0"
-	stateDir                = "/run/chv-lambda"
-	reapVmTimeout           = 20 * time.Second
-)
-
-var (
-	kernelPath = "resources/bin/compiled-vmlinux.bin"
-	rootfsPath = "out/ubuntu-ext4.img"
-	initPath   = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
+	bridgeName   = "br0"
+	bridgeIP     = "10.20.1.1/24"
+	bridgeSubnet = "10.20.1.0/24"
+	stateDir     = "/run/chv-lambda"
 )
 
 func main() {
