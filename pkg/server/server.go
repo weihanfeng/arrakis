@@ -41,7 +41,7 @@ const (
 )
 
 var (
-	kernelPath = "resources/bin/compiled-vmlinux.bin"
+	kernelPath = "resources/bin/vmlinux.bin"
 	rootfsPath = "out/ubuntu-ext4.img"
 	initPath   = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
 )
