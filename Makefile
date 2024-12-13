@@ -32,14 +32,19 @@ guestinit:
 	mkdir -p $(OUT_DIR)
 	CGO_ENABLED=0 go build -o $(OUT_DIR)/chv-guestinit cmd/guestinit/guestinit.go
 
+.PHONY: rootfsmaker
+rootfsmaker:
+	mkdir -p $(OUT_DIR)
+	go build -o $(OUT_DIR)/chv-rootfsmaker cmd/rootfsmaker/main.go
+
 # TODO: Try to avoid sudo here.
 .PHONY: guestrootfs
-guestrootfs: guestinit
+guestrootfs: guestinit rootfsmaker
 	mkdir -p $(OUT_DIR)
-	sudo ./resources/scripts/rootfs/rootfs-from-dockerfile.sh
+	sudo $(OUT_DIR)/chv-rootfsmaker create -d ./resources/scripts/rootfs/Dockerfile
 
 .PHONY: guest
-guest: guestinit codeserver cmdserver guestrootfs
+guest: rootfsmaker guestinit codeserver cmdserver guestrootfs
 
 .PHONY: codeserver
 codeserver: protos
