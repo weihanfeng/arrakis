@@ -1,11 +1,6 @@
 OUT_DIR := out
 PROTOS_DIR := protos
 
-.PHONY: grpcserver
-grpcserver: protos
-	mkdir -p $(OUT_DIR)
-	go build -o $(OUT_DIR)/chv-lambda-grpcserver cmd/grpcserver/main.go
-
 .PHONY: restserver
 restserver: protos
 	mkdir -p $(OUT_DIR)
@@ -57,4 +52,4 @@ cmdserver: protos
 	CGO_ENABLED=0 go build -o $(OUT_DIR)/chv-lambda-cmdserver cmd/cmdserver/main.go
 
 .PHONY: all
-all: grpcserver restserver client guestinit codeserver cmdserver guestrootfs guest
+all: restserver client guestinit codeserver cmdserver guestrootfs guest
