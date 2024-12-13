@@ -1,6 +1,6 @@
 FROM ubuntu:20.04
 
-# Avoid prompts from apt
+# Avoid prompts from apt.
 ENV DEBIAN_FRONTEND=noninteractive
 
 ARG USERNAME=elara
@@ -9,11 +9,11 @@ RUN useradd -m $USERNAME && \
     echo "$USERNAME:$PASSWORD" | chpasswd && \
     adduser $USERNAME sudo
 
-# Set timezone
+# Set timezone.
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Update and install common utilities
+# Update and install common utilities.
 RUN apt-get update && apt-get install -y \
     init \
     systemd \
@@ -52,9 +52,12 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Add any additional configurations or packages here
-# TODO: Adding packages above rebuilds everything as its in one layer. Split them out and keep
-# appending.
+# Dependencies for executing TS and React code.
+ENV PATH=$PATH:/usr/bin/versions/node/v22.11.0/bin
+# TODO: Giving absolute paths to `npm create` isn't respected, hence we use WORKDIR.
+WORKDIR /opt/custom_scripts/node_code_server
+RUN npm create vite@latest . -- --template react-ts 2>&1
+RUN npm install 2>&1
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
 RUN . ~/.nvm/nvm.sh && nvm install 22
 
@@ -67,16 +70,13 @@ RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 # Add user binaries from the host into the guest rootfs in this section.
 ##############
 COPY out/chv-guestinit /opt/custom_scripts/guestinit
-COPY out/chv-lambda-codeserver /opt/custom_scripts/chv-lambda-codeserver
-COPY out/chv-lambda-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
+
+# Optional binary that helps execute code inside the VM.
+#COPY out/chv-lambda-codeserver /opt/custom_scripts/chv-lambda-codeserver
+
+# Optional binary that helps execute shell commands inside the VM.
+#COPY out/chv-lambda-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
 ##############
 
 # Make sure the user binaries are executable.
 RUN chmod +x /opt/custom_scripts/*
-
-# Install the server that will execute react code.
-ENV PATH=$PATH:/usr/bin/versions/node/v22.11.0/bin
-# TODO: Giving absolute paths to `npm create` isn't respected, hence we use WORKDIR.
-WORKDIR /opt/custom_scripts/node_code_server
-RUN npm create vite@latest . -- --template react-ts 2>&1
-RUN npm install 2>&1
