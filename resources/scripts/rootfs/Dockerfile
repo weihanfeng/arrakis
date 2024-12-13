@@ -64,14 +64,14 @@ RUN mkdir -p /opt/custom_scripts
 # To support sudo within the guest.
 RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 
-# Add custom binaries from the host into the guest rootfs in this section.
+# Add user binaries from the host into the guest rootfs in this section.
 ##############
 COPY out/chv-guestinit /opt/custom_scripts/guestinit
 COPY out/chv-lambda-codeserver /opt/custom_scripts/chv-lambda-codeserver
 COPY out/chv-lambda-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
 ##############
 
-# Make sure the scripts are executable
+# Make sure the user binaries are executable.
 RUN chmod +x /opt/custom_scripts/*
 
 # Install the server that will execute react code.
