@@ -61,12 +61,15 @@ RUN . ~/.nvm/nvm.sh && nvm install 22
 # Create a directory for your custom scripts
 RUN mkdir -p /opt/custom_scripts
 
+# To support sudo within the guest.
 RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 
-# Helper scripts.
+# Add custom binaries from the host into the guest rootfs in this section.
+##############
 COPY out/chv-guestinit /opt/custom_scripts/guestinit
 COPY out/chv-lambda-codeserver /opt/custom_scripts/chv-lambda-codeserver
 COPY out/chv-lambda-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
+##############
 
 # Make sure the scripts are executable
 RUN chmod +x /opt/custom_scripts/*
