@@ -3,8 +3,8 @@ FROM ubuntu:20.04
 # Avoid prompts from apt
 ENV DEBIAN_FRONTEND=noninteractive
 
-ARG USERNAME=maverick
-ARG PASSWORD=test0000
+ARG USERNAME=elara
+ARG PASSWORD=elara0000
 RUN useradd -m $USERNAME && \
     echo "$USERNAME:$PASSWORD" | chpasswd && \
     adduser $USERNAME sudo
