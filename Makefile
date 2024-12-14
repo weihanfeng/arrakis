@@ -9,7 +9,7 @@ restserver: protos
 .PHONY: client
 client: protos
 	mkdir -p ${OUT_DIR}
-	go build -o ${OUT_DIR}/chv-lambda-client cmd/client/client.go
+	go build -o ${OUT_DIR}/chv-lambda-client cmd/client/main.go
 
 .PHONY: protos
 protos:
@@ -25,7 +25,7 @@ clean:
 .PHONY: guestinit
 guestinit:
 	mkdir -p ${OUT_DIR}
-	CGO_ENABLED=0 go build -o ${OUT_DIR}/chv-guestinit cmd/guestinit/guestinit.go
+	CGO_ENABLED=0 go build -o ${OUT_DIR}/chv-guestinit cmd/guestinit/main.go
 
 .PHONY: rootfsmaker
 rootfsmaker:
@@ -44,7 +44,7 @@ guest: rootfsmaker guestinit codeserver cmdserver guestrootfs
 .PHONY: codeserver
 codeserver: protos
 	mkdir -p ${OUT_DIR}
-	CGO_ENABLED=0 go build -o ${OUT_DIR}/chv-lambda-codeserver cmd/codeserver/codeserver.go
+	CGO_ENABLED=0 go build -o ${OUT_DIR}/chv-lambda-codeserver cmd/codeserver/main.go
 
 .PHONY: cmdserver
 cmdserver: protos
