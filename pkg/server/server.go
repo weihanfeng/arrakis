@@ -15,8 +15,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/abshkbh/chv-lambda/openapi"
-	"github.com/abshkbh/chv-lambda/out/protos"
+	"github.com/abshkbh/chv-lambda/out/gen/chvapi"
+	"github.com/abshkbh/chv-lambda/out/gen/serverapi"
 	"github.com/abshkbh/chv-lambda/pkg/config"
 	"github.com/abshkbh/chv-lambda/pkg/server/fountain"
 	"github.com/abshkbh/chv-lambda/pkg/server/ipallocator"
@@ -24,6 +24,28 @@ import (
 	"google.golang.org/grpc/status"
 	"gvisor.dev/gvisor/pkg/cleanup"
 )
+
+// vmStatus represents the status of a VM.
+type vmStatus int
+
+const (
+	vmStatusStarted vmStatus = iota
+	vmStatusRunning
+	vmStatusStopped
+)
+
+func (status vmStatus) String() string {
+	switch status {
+	case vmStatusStarted:
+		return "STARTED"
+	case vmStatusRunning:
+		return "RUNNING"
+	case vmStatusStopped:
+		return "STOPPED"
+	default:
+		return "UNKNOWN"
+	}
+}
 
 const (
 	numBootVcpus    = 1
@@ -42,7 +64,7 @@ const (
 
 var (
 	kernelPath = "resources/bin/vmlinux.bin"
-	rootfsPath = "out/ubuntu-ext4.img"
+	rootfsPath = "out/chv-guestrootfs-ext4.img"
 	initPath   = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
 )
 
@@ -62,11 +84,11 @@ type vm struct {
 	name          string
 	stateDirPath  string
 	apiSocketPath string
-	apiClient     *openapi.APIClient
+	apiClient     *chvapi.APIClient
 	process       *os.Process
 	ip            *net.IPNet
 	tapDevice     string
-	status        protos.VMStatus
+	status        vmStatus
 }
 
 func getKernelCmdLine(gatewayIP string, guestIP string, entryPoint string) string {
@@ -194,18 +216,18 @@ func unixSocketClient(socketPath string) *http.Client {
 	}
 }
 
-func createApiClient(apiSocketPath string) *openapi.APIClient {
-	configuration := openapi.NewConfiguration()
+func createApiClient(apiSocketPath string) *chvapi.APIClient {
+	configuration := chvapi.NewConfiguration()
 	configuration.HTTPClient = unixSocketClient(apiSocketPath)
-	configuration.Servers = openapi.ServerConfigurations{
+	configuration.Servers = chvapi.ServerConfigurations{
 		{
 			URL: "http://localhost/api/v1",
 		},
 	}
-	return openapi.NewAPIClient(configuration)
+	return chvapi.NewAPIClient(configuration)
 }
 
-func waitForServer(ctx context.Context, apiClient *openapi.APIClient, timeout time.Duration) error {
+func waitForServer(ctx context.Context, apiClient *chvapi.APIClient, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -386,17 +408,17 @@ func (s *Server) createVM(ctx context.Context, vmName string, entryPoint string)
 		s.ipAllocator.FreeIP(guestIP.IP)
 	})
 
-	vmConfig := openapi.VmConfig{
-		Payload: openapi.PayloadConfig{
+	vmConfig := chvapi.VmConfig{
+		Payload: chvapi.PayloadConfig{
 			Kernel:  String(kernelPath),
 			Cmdline: String(getKernelCmdLine(s.bridgeIP, guestIP.String(), entryPoint)),
 		},
-		Disks:   []openapi.DiskConfig{{Path: rootfsPath}},
-		Cpus:    &openapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
-		Memory:  &openapi.MemoryConfig{Size: memorySizeBytes},
-		Serial:  openapi.NewConsoleConfig(serialPortMode),
-		Console: openapi.NewConsoleConfig(consolePortMode),
-		Net:     []openapi.NetConfig{{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
+		Disks:   []chvapi.DiskConfig{{Path: rootfsPath}},
+		Cpus:    &chvapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
+		Memory:  &chvapi.MemoryConfig{Size: memorySizeBytes},
+		Serial:  chvapi.NewConsoleConfig(serialPortMode),
+		Console: chvapi.NewConsoleConfig(consolePortMode),
+		Net:     []chvapi.NetConfig{{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
 	}
 	req := apiClient.DefaultAPI.CreateVM(ctx)
 	req = req.VmConfig(vmConfig)
@@ -438,7 +460,7 @@ func (s *Server) createVM(ctx context.Context, vmName string, entryPoint string)
 		process:       cmd.Process,
 		ip:            guestIP,
 		tapDevice:     tapDevice,
-		status:        protos.VMStatus_VM_STATUS_RUNNING,
+		status:        vmStatusRunning,
 	}
 	log.Infof("Successfully created VM: %s", vmName)
 	s.vms[vmName] = vm
@@ -447,7 +469,6 @@ func (s *Server) createVM(ctx context.Context, vmName string, entryPoint string)
 }
 
 type Server struct {
-	protos.UnimplementedVMManagementServiceServer
 	vms         map[string]*vm
 	fountain    *fountain.Fountain
 	ipAllocator *ipallocator.IPAllocator
@@ -456,7 +477,7 @@ type Server struct {
 	stateDir string
 }
 
-func (s *Server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*protos.StartVMResponse, error) {
+func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*serverapi.StartVMResponse, error) {
 	vmName := req.GetVmName()
 	entryPoint := req.GetEntryPoint()
 	logger := log.WithField("vmName", vmName)
@@ -473,7 +494,7 @@ func (s *Server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*prot
 			return nil, fmt.Errorf("failed to boot existing VM. bad status: %v", resp)
 		}
 		// This is set by `createVM` when the VM is new.
-		vm.status = protos.VMStatus_VM_STATUS_RUNNING
+		vm.status = vmStatusRunning
 	} else {
 		err := s.createVM(ctx, vmName, entryPoint)
 		if err != nil {
@@ -484,10 +505,16 @@ func (s *Server) StartVM(ctx context.Context, req *protos.StartVMRequest) (*prot
 	}
 
 	logger.Infof("VM started")
-	return &protos.StartVMResponse{VmInfo: &protos.VMInfo{VmName: vmName, Ip: vm.ip.String(), CodeServerPort: config.CodeServerPort, Status: vm.status, TapDeviceName: vm.tapDevice}}, nil
+	return &serverapi.StartVMResponse{
+		VmName:         serverapi.PtrString(vmName),
+		Ip:             serverapi.PtrString(vm.ip.String()),
+		Status:         serverapi.PtrString(vm.status.String()),
+		TapDeviceName:  serverapi.PtrString(vm.tapDevice),
+		CodeServerPort: serverapi.PtrString(config.CodeServerPort),
+	}, nil
 }
 
-func (s *Server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
+func (s *Server) StopVM(ctx context.Context, req *serverapi.VMRequest) (*serverapi.VMResponse, error) {
 	vmName := req.GetVmName()
 	logger := log.WithField("vmName", vmName)
 	logger.Infof("received request to stop VM")
@@ -507,9 +534,11 @@ func (s *Server) StopVM(ctx context.Context, req *protos.VMRequest) (*protos.VMR
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
 	}
 
-	vm.status = protos.VMStatus_VM_STATUS_STOPPED
+	vm.status = vmStatusStopped
 	logger.Infof("VM stopped")
-	return &protos.VMResponse{}, nil
+	return &serverapi.VMResponse{
+		Success: serverapi.PtrBool(true),
+	}, nil
 }
 
 func (s *Server) destroyVM(ctx context.Context, vmName string) error {
@@ -588,54 +617,55 @@ func (s *Server) destroyAllVMs(ctx context.Context) error {
 	return finalErr
 }
 
-func (s *Server) DestroyVM(ctx context.Context, req *protos.VMRequest) (*protos.VMResponse, error) {
+func (s *Server) DestroyVM(ctx context.Context, req *serverapi.VMRequest) (*serverapi.VMResponse, error) {
 	log.Infof("received request to destroy VM")
 	vmName := req.GetVmName()
 	err := s.destroyVM(ctx, vmName)
 	if err != nil {
 		return nil, err
 	}
-	return &protos.VMResponse{}, nil
+	return &serverapi.VMResponse{}, nil
 }
 
-func (s *Server) DestroyAllVMs(ctx context.Context, req *protos.DestroyAllVMsRequest) (*protos.VMResponse, error) {
+func (s *Server) DestroyAllVMs(ctx context.Context) (*serverapi.DestroyAllVMsResponse, error) {
 	log.Infof("received request to destroy all VMs")
 	err := s.destroyAllVMs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &protos.VMResponse{}, nil
+
+	return &serverapi.DestroyAllVMsResponse{
+		Success: serverapi.PtrBool(true),
+	}, nil
 }
 
-func (s *Server) ListAllVMs(ctx context.Context, req *protos.ListAllVMsRequest) (*protos.ListAllVMsResponse, error) {
-	resp := &protos.ListAllVMsResponse{}
-	var vms []*protos.VMInfo
+func (s *Server) ListAllVMs(ctx context.Context) (*serverapi.ListAllVMsResponse, error) {
+	resp := &serverapi.ListAllVMsResponse{}
+	var vms []serverapi.ListAllVMsResponseVmsInner
+
 	for _, vm := range s.vms {
-		vmInfo := protos.VMInfo{
-			VmName:        vm.name,
-			Ip:            vm.ip.String(),
-			Status:        vm.status,
-			TapDeviceName: vm.tapDevice,
+		vmInfo := serverapi.ListAllVMsResponseVmsInner{
+			VmName:        serverapi.PtrString(vm.name),
+			Ip:            serverapi.PtrString(vm.ip.String()),
+			Status:        serverapi.PtrString(vm.status.String()),
+			TapDeviceName: serverapi.PtrString(vm.tapDevice),
 		}
-		vms = append(vms, &vmInfo)
+		vms = append(vms, vmInfo)
 	}
 	resp.Vms = vms
 	return resp, nil
 }
 
-func (s *Server) ListVM(ctx context.Context, req *protos.ListVMRequest) (*protos.ListVMResponse, error) {
-	vmName := req.GetVmName()
+func (s *Server) ListVM(ctx context.Context, vmName string) (*serverapi.ListVMResponse, error) {
 	vm, ok := s.vms[vmName]
 	if !ok {
 		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
 	}
 
-	resp := &protos.ListVMResponse{}
-	resp.VmInfo = &protos.VMInfo{
-		VmName:        vm.name,
-		Ip:            vm.ip.String(),
-		Status:        vm.status,
-		TapDeviceName: vm.tapDevice,
-	}
-	return resp, nil
+	return &serverapi.ListVMResponse{
+		VmName:        serverapi.PtrString(vm.name),
+		Ip:            serverapi.PtrString(vm.ip.String()),
+		Status:        serverapi.PtrString(vm.status.String()),
+		TapDeviceName: serverapi.PtrString(vm.tapDevice),
+	}, nil
 }

@@ -20,7 +20,6 @@ const (
 	dockerContainerName = "chv-lambda"
 	rootfsTar           = outputDir + "/rootfs.tar"
 	rootfsDir           = outputDir + "/rootfs"
-	rootfsExt4Image     = outputDir + "/rootfs-ext4.img"
 	mountDir            = outputDir + "/mnt"
 	diskSizeInMB        = 2048
 )
@@ -33,7 +32,7 @@ func runCmd(cmdName string, args ...string) error {
 	return cmd.Run()
 }
 
-func createRootfsFromDockerfile(dockerFile string) (retErr error) {
+func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr error) {
 	cleanup := cleanup.Make(func() {
 		if retErr == nil {
 			log.Info("create rootfs from docker file finished")
@@ -105,7 +104,7 @@ func createRootfsFromDockerfile(dockerFile string) (retErr error) {
 		"dd",
 		"if=/dev/zero",
 		fmt.Sprintf(
-			"of=%s", rootfsExt4Image),
+			"of=%s", outputFile),
 		"bs=1M",
 		fmt.Sprintf("count=%s", strconv.Itoa(diskSizeInMB)),
 	)
@@ -114,7 +113,7 @@ func createRootfsFromDockerfile(dockerFile string) (retErr error) {
 	}
 
 	log.Info("formatting img file to ext4")
-	err = runCmd("mkfs.ext4", rootfsExt4Image)
+	err = runCmd("mkfs.ext4", outputFile)
 	if err != nil {
 		return fmt.Errorf("failed to format ext4 image: %w", err)
 	}
@@ -131,7 +130,7 @@ func createRootfsFromDockerfile(dockerFile string) (retErr error) {
 	})
 
 	log.Info("mounting loopback mount")
-	err = runCmd("mount", "-o", "loop", rootfsExt4Image, mountDir)
+	err = runCmd("mount", "-o", "loop", outputFile, mountDir)
 	if err != nil {
 		return fmt.Errorf("failed to mount ext4 image: %w", err)
 	}
@@ -172,9 +171,15 @@ func main() {
 						Usage:    "Path to the docker file",
 						Required: true,
 					},
+					&cli.StringFlag{
+						Name:     "output",
+						Aliases:  []string{"o"},
+						Usage:    "Path to the output rootfs file",
+						Required: true,
+					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return createRootfsFromDockerfile(ctx.String("dockerfile"))
+					return createRootfsFromDockerfile(ctx.String("dockerfile"), ctx.String("output"))
 				},
 			},
 		},

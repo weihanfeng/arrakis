@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/abshkbh/chv-lambda/out/protos"
+	"github.com/abshkbh/chv-lambda/out/gen/serverapi"
 	"github.com/abshkbh/chv-lambda/pkg/config"
 	"github.com/abshkbh/chv-lambda/pkg/server"
 )
@@ -23,13 +23,13 @@ type restServer struct {
 
 // Implement handler functions
 func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
-	var req protos.StartVMRequest
+	var req serverapi.StartVMRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	if req.VmName == "" {
+	if req.VmName == nil || *req.VmName == "" {
 		http.Error(w, "Empty vm name", http.StatusBadRequest)
 		return
 	}
@@ -40,11 +40,12 @@ func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *restServer) stopVM(w http.ResponseWriter, r *http.Request) {
-	var req protos.VMRequest
+	var req serverapi.VMRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
@@ -56,11 +57,12 @@ func (s *restServer) stopVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *restServer) destroyVM(w http.ResponseWriter, r *http.Request) {
-	var req protos.VMRequest
+	var req serverapi.VMRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
@@ -72,42 +74,42 @@ func (s *restServer) destroyVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *restServer) destroyAllVMs(w http.ResponseWriter, r *http.Request) {
-	req := &protos.DestroyAllVMsRequest{}
-	resp, err := s.vmServer.DestroyAllVMs(r.Context(), req)
+	resp, err := s.vmServer.DestroyAllVMs(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to destroy all VMs: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *restServer) listAllVMs(w http.ResponseWriter, r *http.Request) {
-	req := &protos.ListAllVMsRequest{}
-	resp, err := s.vmServer.ListAllVMs(r.Context(), req)
+	resp, err := s.vmServer.ListAllVMs(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to list all VMs: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *restServer) listVM(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	vmName := vars["name"]
-
-	req := &protos.ListVMRequest{VmName: vmName}
-	resp, err := s.vmServer.ListVM(r.Context(), req)
+	resp, err := s.vmServer.ListVM(r.Context(), vmName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to list VM: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -152,6 +154,6 @@ func main() {
 	if err := srv.Shutdown(context.Background()); err != nil {
 		log.Fatalf("Server shutdown failed: %v", err)
 	}
-	vmServer.DestroyAllVMs(context.Background(), &protos.DestroyAllVMsRequest{})
+	vmServer.DestroyAllVMs(context.Background())
 	log.Println("Server stopped")
 }

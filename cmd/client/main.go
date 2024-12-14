@@ -3,156 +3,147 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/urfave/cli/v2"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
-	pb "github.com/abshkbh/chv-lambda/out/protos"
+	"github.com/abshkbh/chv-lambda/out/gen/serverapi"
 	"github.com/abshkbh/chv-lambda/pkg/config"
 )
 
 const (
-	defaultServerAddress = config.GrpcServerAddr + ":" + config.GrpcServerPort
+	defaultServerAddress = config.RestServerAddr + ":" + config.RestServerPort
 )
 
-func stopVM(serverAddr string, vmName string) error {
-	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
-	}
-	defer conn.Close()
+var (
+	apiClient *serverapi.APIClient
+)
 
-	client := pb.NewVMManagementServiceClient(conn)
-	ctx := context.Background()
-
-	request := &pb.VMRequest{VmName: vmName}
-	_, err = client.StopVM(ctx, request)
-	if err != nil {
-		return fmt.Errorf("error stopping: %w", err)
+func stopVM(vmName string) error {
+	vmRequest := &serverapi.VMRequest{
+		VmName: serverapi.PtrString(vmName),
 	}
 
-	log.Infof("Successfully stopped VM: %s", vmName)
+	_, _, err := apiClient.DefaultAPI.VmStopPost(context.Background()).VMRequest(*vmRequest).Execute()
+	if err != nil {
+		return fmt.Errorf("failed to stop VM: %w", err)
+	}
+
+	log.Infof("successfully stopped VM: %s", vmName)
 	return nil
 }
 
-func destroyVM(serverAddr string, vmName string) error {
-	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
-	}
-	defer conn.Close()
-
-	client := pb.NewVMManagementServiceClient(conn)
-	ctx := context.Background()
-
-	request := &pb.VMRequest{VmName: vmName}
-	_, err = client.DestroyVM(ctx, request)
-	if err != nil {
-		return fmt.Errorf("error destroying: %w", err)
+func destroyVM(vmName string) error {
+	vmRequest := &serverapi.VMRequest{
+		VmName: serverapi.PtrString(vmName),
 	}
 
-	log.Infof("Successfully destroyed VM: %s", vmName)
+	_, _, err := apiClient.DefaultAPI.VmDestroyPost(context.Background()).VMRequest(*vmRequest).Execute()
+	if err != nil {
+		return fmt.Errorf("failed to destroy VM: %w", err)
+	}
+
+	log.Infof("successfully destroyed VM: %s", vmName)
 	return nil
 }
 
-func destroyAllVMs(serverAddr string) error {
-	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func destroyAllVMs() error {
+	_, _, err := apiClient.DefaultAPI.VmDestroyAllPost(context.Background()).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
-	}
-	defer conn.Close()
-
-	client := pb.NewVMManagementServiceClient(conn)
-	ctx := context.Background()
-	_, err = client.DestroyAllVMs(ctx, &pb.DestroyAllVMsRequest{})
-	if err != nil {
-		return fmt.Errorf("error destroying all VMs: %w", err)
+		return fmt.Errorf("failed to destroy all VMs: %w", err)
 	}
 
-	log.Info("Successfully destroyed all VMs")
+	log.Infof("destroyed all VMs")
 	return nil
 }
 
-func startVM(serverAddr string, vmName string, entryPoint string) error {
-	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func startVM(vmName string, entryPoint string) error {
+	startVMRequest := &serverapi.StartVMRequest{
+		VmName:     serverapi.PtrString(vmName),
+		EntryPoint: serverapi.PtrString(entryPoint),
+	}
+
+	resp, _, err := apiClient.DefaultAPI.VmStartPost(context.Background()).StartVMRequest(*startVMRequest).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
+		return fmt.Errorf("failed to start VM: %w", err)
 	}
-	defer conn.Close()
 
-	client := pb.NewVMManagementServiceClient(conn)
-	ctx := context.Background()
-
-	request := &pb.StartVMRequest{
-		VmName:     vmName,
-		EntryPoint: entryPoint,
-	}
-	resp, err := client.StartVM(ctx, request)
+	resp_bytes, err := resp.MarshalJSON()
 	if err != nil {
-		return fmt.Errorf("error starting: %w", err)
+		return fmt.Errorf("failed to marshal response: %w", err)
 	}
-
-	log.Infof("Successfully started VM: %v", resp.VmInfo)
+	log.Infof("started VM: %v", string(resp_bytes))
 	return nil
 }
 
-func printVMInfo(vm *pb.VMInfo) string {
-	return fmt.Sprintf("VM: Name=%s, Status=%s, IP=%s, TapDevice=%s",
-		vm.VmName,
-		strings.TrimPrefix(vm.GetStatus().String(), "VM_STATUS_"),
-		vm.Ip,
-		vm.TapDeviceName,
-	)
-}
-
-func listAllVMs(serverAddr string) error {
-	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func listAllVMs() error {
+	resp, _, err := apiClient.DefaultAPI.VmListGet(context.Background()).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
+		return fmt.Errorf("failed to list VM: %w", err)
 	}
-	defer conn.Close()
 
-	client := pb.NewVMManagementServiceClient(conn)
-	ctx := context.Background()
-	resp, err := client.ListAllVMs(ctx, &pb.ListAllVMsRequest{})
+	resp_bytes, err := resp.MarshalJSON()
 	if err != nil {
-		return fmt.Errorf("error listing all VMs: %w", err)
+		return fmt.Errorf("failed to marshal response: %w", err)
 	}
-
-	for _, vm := range resp.Vms {
-		fmt.Println(printVMInfo(vm))
-	}
+	log.Infof("VMs: %v", string(resp_bytes))
 	return nil
 }
 
-func listVM(serverAddr string, vmName string) error {
-	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func createApiClient(serverAddr string) (*serverapi.APIClient, error) {
+	host, port, err := net.SplitHostPort(serverAddr)
 	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
+		return nil, fmt.Errorf("failed to parse server address: %v", err)
 	}
-	defer conn.Close()
 
-	client := pb.NewVMManagementServiceClient(conn)
-	ctx := context.Background()
-
-	request := &pb.ListVMRequest{
-		VmName: vmName,
+	serverConfiguration := &serverapi.ServerConfiguration{
+		URL:         "http://{host}:{port}",
+		Description: "Development server",
+		Variables: map[string]serverapi.ServerVariable{
+			"host": {
+				Description:  "host",
+				DefaultValue: host,
+			},
+			"port": {
+				Description:  "port",
+				DefaultValue: port,
+			},
+		},
 	}
-	resp, err := client.ListVM(ctx, request)
+
+	configuration := serverapi.NewConfiguration()
+	configuration.Servers = serverapi.ServerConfigurations{
+		*serverConfiguration,
+	}
+	apiClient = serverapi.NewAPIClient(configuration)
+
+	return apiClient, nil
+}
+
+func listVM(vmName string) error {
+	resp, _, err := apiClient.DefaultAPI.VmNameGet(context.Background(), vmName).Execute()
 	if err != nil {
-		return fmt.Errorf("error starting: %w", err)
+		return fmt.Errorf("failed to list VM: %w", err)
 	}
 
-	fmt.Println(printVMInfo(resp.VmInfo))
+	resp_bytes, err := resp.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal response: %w", err)
+	}
+	log.Infof("VM: %v", string(resp_bytes))
 	return nil
 }
 
 func main() {
+	var err error
+	apiClient, err = createApiClient(defaultServerAddress)
+	if err != nil {
+		log.Fatalf("failed to initialize api client: %v", err)
+	}
+
 	app := &cli.App{
 		Name:  "vm-cli",
 		Usage: "A CLI for managing VMs",
@@ -162,6 +153,13 @@ func main() {
 				Aliases: []string{"s"},
 				Value:   defaultServerAddress,
 				Usage:   "gRPC server address",
+				Action: func(ctx *cli.Context, value string) error {
+					apiClient, err = createApiClient(value)
+					if err != nil {
+						return fmt.Errorf("failed to initialize api client: %v", err)
+					}
+					return nil
+				},
 			},
 		},
 		Commands: []*cli.Command{
@@ -183,7 +181,7 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return startVM(ctx.String("server"), ctx.String("name"), ctx.String("entry-point"))
+					return startVM(ctx.String("name"), ctx.String("entry-point"))
 				},
 			},
 			{
@@ -198,7 +196,7 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return stopVM(ctx.String("server"), ctx.String("name"))
+					return stopVM(ctx.String("name"))
 				},
 			},
 			{
@@ -213,21 +211,21 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return destroyVM(ctx.String("server"), ctx.String("name"))
+					return destroyVM(ctx.String("name"))
 				},
 			},
 			{
 				Name:  "destroy-all",
 				Usage: "Destroy all VMs",
 				Action: func(ctx *cli.Context) error {
-					return destroyAllVMs(ctx.String("server"))
+					return destroyAllVMs()
 				},
 			},
 			{
 				Name:  "list-all",
 				Usage: "List all VMs",
 				Action: func(ctx *cli.Context) error {
-					return listAllVMs(ctx.String("server"))
+					return listAllVMs()
 				},
 			},
 			{
@@ -242,13 +240,13 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return listVM(ctx.String("server"), ctx.String("name"))
+					return listVM(ctx.String("name"))
 				},
 			},
 		},
 	}
 
-	err := app.Run(os.Args)
+	err = app.Run(os.Args)
 	if err != nil {
 		log.Fatal(err)
 	}

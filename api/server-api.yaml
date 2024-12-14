@@ -1,0 +1,186 @@
+openapi: 3.0.0
+info:
+  title: VM Management API
+  description: API for managing VMs via REST endpoints.
+  version: 1.0.0
+servers:
+  - url: http://{host}:{port}
+    description: Development server
+    variables:
+      host:
+        default: localhost
+      port:
+        default: "8080"
+paths:
+  /vm/start:
+    post:
+      summary: Start a VM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartVMRequest'
+      responses:
+        '200':
+          description: Successfully started VM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartVMResponse'
+        '400':
+          description: Invalid request body
+        '500':
+          description: Internal server error
+  /vm/stop:
+    post:
+      summary: Stop a VM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMRequest'
+      responses:
+        '200':
+          description: Successfully stopped VM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMResponse'
+        '400':
+          description: Invalid request body
+        '500':
+          description: Internal server error
+  /vm/destroy:
+    post:
+      summary: Destroy a VM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMRequest'
+      responses:
+        '200':
+          description: Successfully destroyed VM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMResponse'
+        '400':
+          description: Invalid request body
+        '500':
+          description: Internal server error
+  /vm/destroy-all:
+    post:
+      summary: Destroy all VMs
+      responses:
+        '200':
+          description: Successfully destroyed all VMs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestroyAllVMsResponse'
+        '500':
+          description: Internal server error
+  /vm/list:
+    get:
+      summary: List all VMs
+      responses:
+        '200':
+          description: List of all VMs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListAllVMsResponse'
+        '500':
+          description: Internal server error
+  /vm/{name}:
+    get:
+      summary: Get details of a specific VM
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the VM
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VM details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListVMResponse'
+        '500':
+          description: Internal server error
+components:
+  schemas:
+    StartVMRequest:
+      type: object
+      properties:
+        vmName:
+          type: string
+          description: Name of the VM to start
+        entryPoint:
+          type: string
+          description: Optional entry point to start in the VM upon boot
+    StartVMResponse:
+      type: object
+      properties:
+        vmName:
+          type: string
+        status:
+          type: string
+        ip:
+          type: string
+        tapDeviceName:
+          type: string
+        codeServerPort:
+          type: string
+    VMRequest:
+      type: object
+      properties:
+        vmName:
+          type: string
+          description: Name of the VM
+    VMResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+    DestroyAllVMsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+    ListAllVMsResponse:
+      type: object
+      properties:
+        vms:
+          type: array
+          items:
+            type: object
+            properties:
+              vmName:
+                type: string
+              status:
+                type: string
+              ip:
+                type: string
+              tapDeviceName:
+                type: string
+    ListVMResponse:
+      type: object
+      properties:
+        vmName:
+          type: string
+        status:
+          type: string
+        ip:
+          type: string
+        tapDeviceName:
+          type: string
