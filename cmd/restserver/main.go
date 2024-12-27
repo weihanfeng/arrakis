@@ -11,10 +11,21 @@ import (
 
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+	"github.com/urfave/cli/v2"
 
 	"github.com/abshkbh/chv-lambda/out/gen/serverapi"
 	"github.com/abshkbh/chv-lambda/pkg/config"
 	"github.com/abshkbh/chv-lambda/pkg/server"
+)
+
+const (
+	defaultStateDir     = "/run/chv-lambda"
+	defaultBridgeName   = "br0"
+	defaultBridgeIP     = "10.20.1.1/24"
+	defaultBridgeSubnet = "10.20.1.0/24"
+	defaultChvBinPath   = "resources/bin/cloud-hypervisor"
+	defaultKernelPath   = "resources/bin/vmlinux.bin"
 )
 
 type restServer struct {
@@ -123,11 +134,85 @@ func (s *restServer) listVM(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func setConfigParsing() {
+	viper.SetDefault(
+		"restserver.chv_bin",
+		defaultChvBinPath,
+	)
+	viper.SetDefault(
+		"restserver.kernel",
+		defaultKernelPath,
+	)
+	viper.SetDefault(
+		"restserver.state_dir",
+		defaultStateDir,
+	)
+	viper.SetDefault(
+		"restserver.bridge_name",
+		defaultBridgeName,
+	)
+	viper.SetDefault(
+		"restserver.bridge_ip",
+		defaultBridgeIP,
+	)
+	viper.SetDefault(
+		"restserver.bridge_subnet",
+		defaultBridgeSubnet,
+	)
+}
+
 func main() {
-	// Create the VM server
-	vmServer, err := server.NewServer(config.StateDir, config.BridgeName, config.BridgeIP, config.BridgeSubnet)
+	var serverConfig server.ServerConfig
+	var configFile string
+
+	app := &cli.App{
+		Name:  "chv-restserver",
+		Usage: "A daemon for spawning and managing cloud-hypervisor based microVMs.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:        "config",
+				Aliases:     []string{"c"},
+				Required:    true,
+				Usage:       "Path to config file",
+				Destination: &configFile,
+			},
+		},
+		Action: func(ctx *cli.Context) error {
+			file, err := os.Open(configFile)
+			if err != nil {
+				return fmt.Errorf("failed to open config file: %s err: %v", configFile, err)
+			}
+			defer file.Close()
+
+			setConfigParsing()
+			err = viper.ReadConfig(file)
+			if err != nil {
+				return fmt.Errorf("failed to read config: %v", err)
+			}
+
+			restServerConfig := viper.Sub("restserver")
+			if restServerConfig == nil {
+				return fmt.Errorf("restserver configuration not found")
+			}
+
+			if err := restServerConfig.Unmarshal(&serverConfig); err != nil {
+				return fmt.Errorf("error unmarshalling config: %v", err)
+			}
+			log.Infof("server config: %v", serverConfig)
+			return nil
+		},
+	}
+
+	err := app.Run(os.Args)
 	if err != nil {
-		log.Fatalf("Failed to create VM server: %v", err)
+		log.WithError(err).Fatal("server exited with error")
+	}
+
+	// At this point `serverConfig` is populated.
+	// Create the VM server
+	vmServer, err := server.NewServer(serverConfig)
+	if err != nil {
+		log.Fatalf("failed to create VM server: %v", err)
 	}
 
 	// Create REST server
