@@ -29,8 +29,18 @@ func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.VmName == nil || *req.VmName == "" {
+	if req.GetVmName() == "" {
 		http.Error(w, "Empty vm name", http.StatusBadRequest)
+		return
+	}
+
+	if req.GetKernel() == "" {
+		http.Error(w, "Empty kernel", http.StatusBadRequest)
+		return
+	}
+
+	if req.GetRootfs() == "" {
+		http.Error(w, "Empty rootfs", http.StatusBadRequest)
 		return
 	}
 

@@ -123,6 +123,12 @@ components:
         vmName:
           type: string
           description: Name of the VM to start
+        kernel:
+          type: string
+          description: Path of the kernel image to be used
+        rootfs:
+          type: string
+          description: Path of the rootfs image to be used
         entryPoint:
           type: string
           description: Optional entry point to start in the VM upon boot

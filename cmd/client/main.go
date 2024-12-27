@@ -16,6 +16,8 @@ import (
 
 const (
 	defaultServerAddress = config.RestServerAddr + ":" + config.RestServerPort
+	defaultKernelPath    = "resources/bin/vmlinux.bin"
+	defaultRootfsPath    = "out/chv-guestrootfs-ext4.img"
 )
 
 var (
@@ -60,9 +62,11 @@ func destroyAllVMs() error {
 	return nil
 }
 
-func startVM(vmName string, entryPoint string) error {
+func startVM(vmName string, kernel string, rootfs string, entryPoint string) error {
 	startVMRequest := &serverapi.StartVMRequest{
 		VmName:     serverapi.PtrString(vmName),
+		Kernel:     serverapi.PtrString(kernel),
+		Rootfs:     serverapi.PtrString(rootfs),
 		EntryPoint: serverapi.PtrString(entryPoint),
 	}
 
@@ -174,6 +178,18 @@ func main() {
 						Required: true,
 					},
 					&cli.StringFlag{
+						Name:    "kernel",
+						Aliases: []string{"k"},
+						Usage:   "Path of the kernel image to be used",
+						Value:   defaultKernelPath,
+					},
+					&cli.StringFlag{
+						Name:    "rootfs",
+						Aliases: []string{"r"},
+						Usage:   "Path of the rootfs image to be used",
+						Value:   defaultRootfsPath,
+					},
+					&cli.StringFlag{
 						Name:     "entry-point",
 						Aliases:  []string{"e"},
 						Usage:    "Entry point of the VM",
@@ -181,7 +197,12 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return startVM(ctx.String("name"), ctx.String("entry-point"))
+					return startVM(
+						ctx.String("name"),
+						ctx.String("kernel"),
+						ctx.String("rootfs"),
+						ctx.String("entry-point"),
+					)
 				},
 			},
 			{

@@ -63,9 +63,7 @@ const (
 )
 
 var (
-	kernelPath = "resources/bin/vmlinux.bin"
-	rootfsPath = "out/chv-guestrootfs-ext4.img"
-	initPath   = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
+	initPath = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
 )
 
 func String(s string) *string {
@@ -307,7 +305,13 @@ func NewServer(stateDir string, bridgeName string, bridgeIP string, bridgeSubnet
 	}, nil
 }
 
-func (s *Server) createVM(ctx context.Context, vmName string, entryPoint string) error {
+func (s *Server) createVM(
+	ctx context.Context,
+	vmName string,
+	kernelPath string,
+	rootfsPath string,
+	entryPoint string,
+) error {
 	cleanup := cleanup.Make(func() {
 		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("done")
 	})
@@ -480,6 +484,8 @@ type Server struct {
 func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*serverapi.StartVMResponse, error) {
 	vmName := req.GetVmName()
 	entryPoint := req.GetEntryPoint()
+	kernelPath := req.GetKernel()
+	rootfsPath := req.GetRootfs()
 	logger := log.WithField("vmName", vmName)
 	logger.Infof("received request to start VM")
 
@@ -496,7 +502,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		// This is set by `createVM` when the VM is new.
 		vm.status = vmStatusRunning
 	} else {
-		err := s.createVM(ctx, vmName, entryPoint)
+		err := s.createVM(ctx, vmName, kernelPath, rootfsPath, entryPoint)
 		if err != nil {
 			logger.Errorf("failed to start: %v", err)
 			return nil, err
