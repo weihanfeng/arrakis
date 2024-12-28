@@ -23,7 +23,7 @@ ${OUT_DIR}/chv-serverapi.stamp: ./api/server-api.yaml
 	mkdir -p ${API_CLIENT_DIR}
 	openapi-generator-cli generate -i $< -g go -o ${API_CLIENT_DIR} --package-name ${API_CLIENT_GO_PACKAGE_NAME} \
 	--git-user-id abshkbh \
-	--git-repo-id chv-lambda/${API_CLIENT_DIR} \
+	--git-repo-id chv-starter-pack/${API_CLIENT_DIR} \
     --additional-properties=withGoMod=false \
 	--global-property models,supportingFiles,apis,apiTests=false
 	rm -rf openapitools.json
@@ -33,7 +33,7 @@ ${OUT_DIR}/chv-chvapi.stamp: api/chv-api.yaml
 	mkdir -p ${API_CLIENT_DIR}
 	openapi-generator-cli generate -i ./api/chv-api.yaml -g go -o ${CHV_API_DIR} --package-name ${CHV_API_GO_PACKAGE_NAME} \
 	--git-user-id abshkbh \
-	--git-repo-id chv-lambda/${CHV_API_DIR} \
+	--git-repo-id chv-starter-pack/${CHV_API_DIR} \
     --additional-properties=withGoMod=false \
 	--global-property models,supportingFiles,apis,apiTests=false
 	rm -rf openapitools.json

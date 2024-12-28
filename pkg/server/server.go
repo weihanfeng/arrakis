@@ -15,11 +15,11 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/abshkbh/chv-lambda/out/gen/chvapi"
-	"github.com/abshkbh/chv-lambda/out/gen/serverapi"
-	"github.com/abshkbh/chv-lambda/pkg/config"
-	"github.com/abshkbh/chv-lambda/pkg/server/fountain"
-	"github.com/abshkbh/chv-lambda/pkg/server/ipallocator"
+	"github.com/abshkbh/chv-starter-pack/out/gen/chvapi"
+	"github.com/abshkbh/chv-starter-pack/out/gen/serverapi"
+	"github.com/abshkbh/chv-starter-pack/pkg/config"
+	"github.com/abshkbh/chv-starter-pack/pkg/server/fountain"
+	"github.com/abshkbh/chv-starter-pack/pkg/server/ipallocator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"gvisor.dev/gvisor/pkg/cleanup"

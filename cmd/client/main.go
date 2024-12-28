@@ -10,8 +10,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 
-	"github.com/abshkbh/chv-lambda/out/gen/serverapi"
-	"github.com/abshkbh/chv-lambda/pkg/config"
+	"github.com/abshkbh/chv-starter-pack/out/gen/serverapi"
+	"github.com/abshkbh/chv-starter-pack/pkg/config"
 )
 
 var (

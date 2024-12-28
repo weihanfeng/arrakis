@@ -1,4 +1,4 @@
-module github.com/abshkbh/chv-lambda
+module github.com/abshkbh/chv-starter-pack
 
 go 1.23.1
 
