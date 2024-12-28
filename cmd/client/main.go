@@ -157,13 +157,15 @@ func main() {
 				Required: true,
 				Usage:    "Path to config file",
 				Action: func(ctx *cli.Context, value string) error {
-					serverConfig, err := config.GetServerConfig(value)
+					clientConfig, err := config.GetClientConfig(value)
 					if err != nil {
-						return fmt.Errorf("failed to get server config: %v", err)
+						return fmt.Errorf("failed to get client config: %v", err)
 					}
-					log.Infof("server config: %v", serverConfig)
+					log.Infof("client config: %v", clientConfig)
 
-					apiClient, err = createApiClient(fmt.Sprintf("%s:%s", serverConfig.Host, serverConfig.Port))
+					apiClient, err = createApiClient(
+						fmt.Sprintf("%s:%s", clientConfig.ServerHost, clientConfig.ServerPort),
+					)
 					if err != nil {
 						return fmt.Errorf("failed to initialize api client: %v", err)
 					}

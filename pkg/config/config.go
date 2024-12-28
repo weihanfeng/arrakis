@@ -9,6 +9,7 @@ import (
 const (
 	CodeServerPort  = "4030"
 	serverConfigKey = "hostservices.restserver"
+	clientConfigKey = "hostservices.client"
 )
 
 type ServerConfig struct {
@@ -36,6 +37,18 @@ ChvBinPath: %s
 }`, c.Host, c.Port, c.StateDir, c.BridgeName, c.BridgeIP, c.BridgeSubnet, c.KernelPath, c.ChvBinPath)
 }
 
+type ClientConfig struct {
+	ServerHost string `mapstructure:"server_host"`
+	ServerPort string `mapstructure:"server_port"`
+}
+
+func (c ClientConfig) String() string {
+	return fmt.Sprintf(`{
+ServerHost: %s
+ServerPort: %s
+}`, c.ServerHost, c.ServerPort)
+}
+
 func GetServerConfig(configFile string) (*ServerConfig, error) {
 	viper.SetConfigFile(configFile)
 	err := viper.ReadInConfig()
@@ -48,9 +61,28 @@ func GetServerConfig(configFile string) (*ServerConfig, error) {
 		return nil, fmt.Errorf("restserver configuration not found")
 	}
 
-	var serverConfig ServerConfig
-	if err := restServerConfig.Unmarshal(&serverConfig); err != nil {
+	var result ServerConfig
+	if err := restServerConfig.Unmarshal(&result); err != nil {
 		return nil, fmt.Errorf("error unmarshalling config: %v", err)
 	}
-	return &serverConfig, nil
+	return &result, nil
+}
+
+func GetClientConfig(configFile string) (*ClientConfig, error) {
+	viper.SetConfigFile(configFile)
+	err := viper.ReadInConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %v", err)
+	}
+
+	clientConfig := viper.Sub(clientConfigKey)
+	if clientConfig == nil {
+		return nil, fmt.Errorf("client configuration not found")
+	}
+
+	var result ClientConfig
+	if err := clientConfig.Unmarshal(&result); err != nil {
+		return nil, fmt.Errorf("error unmarshalling config: %v", err)
+	}
+	return &result, nil
 }
