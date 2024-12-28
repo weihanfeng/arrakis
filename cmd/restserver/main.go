@@ -11,15 +11,11 @@ import (
 
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"github.com/urfave/cli/v2"
 
 	"github.com/abshkbh/chv-lambda/out/gen/serverapi"
+	"github.com/abshkbh/chv-lambda/pkg/config"
 	"github.com/abshkbh/chv-lambda/pkg/server"
-)
-
-const (
-	restServerConfigKey = "hostservices.restserver"
 )
 
 type restServer struct {
@@ -36,16 +32,6 @@ func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 
 	if req.GetVmName() == "" {
 		http.Error(w, "Empty vm name", http.StatusBadRequest)
-		return
-	}
-
-	if req.GetKernel() == "" {
-		http.Error(w, "Empty kernel", http.StatusBadRequest)
-		return
-	}
-
-	if req.GetRootfs() == "" {
-		http.Error(w, "Empty rootfs", http.StatusBadRequest)
 		return
 	}
 
@@ -129,7 +115,7 @@ func (s *restServer) listVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	var serverConfig server.ServerConfig
+	var serverConfig *config.ServerConfig
 	var configFile string
 
 	app := &cli.App{
@@ -145,19 +131,10 @@ func main() {
 			},
 		},
 		Action: func(ctx *cli.Context) error {
-			viper.SetConfigFile(configFile)
-			err := viper.ReadInConfig()
+			var err error
+			serverConfig, err = config.GetServerConfig(configFile)
 			if err != nil {
-				return fmt.Errorf("failed to read config: %v", err)
-			}
-
-			restServerConfig := viper.Sub(restServerConfigKey)
-			if restServerConfig == nil {
-				return fmt.Errorf("restserver configuration not found")
-			}
-
-			if err := restServerConfig.Unmarshal(&serverConfig); err != nil {
-				return fmt.Errorf("error unmarshalling config: %v", err)
+				return fmt.Errorf("server config not found: %v", err)
 			}
 			log.Infof("server config: %v", serverConfig)
 			return nil
@@ -171,7 +148,7 @@ func main() {
 
 	// At this point `serverConfig` is populated.
 	// Create the VM server
-	vmServer, err := server.NewServer(serverConfig)
+	vmServer, err := server.NewServer(*serverConfig)
 	if err != nil {
 		log.Fatalf("failed to create VM server: %v", err)
 	}

@@ -3,21 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 
 	log "github.com/sirupsen/logrus"
-
 	"github.com/urfave/cli/v2"
 
 	"github.com/abshkbh/chv-lambda/out/gen/serverapi"
 	"github.com/abshkbh/chv-lambda/pkg/config"
-)
-
-const (
-	defaultServerAddress = config.RestServerAddr + ":" + config.RestServerPort
-	defaultKernelPath    = "resources/bin/vmlinux.bin"
-	defaultRootfsPath    = "out/chv-guestrootfs-ext4.img"
 )
 
 var (
@@ -29,9 +23,12 @@ func stopVM(vmName string) error {
 		VmName: serverapi.PtrString(vmName),
 	}
 
-	_, _, err := apiClient.DefaultAPI.VmStopPost(context.Background()).VMRequest(*vmRequest).Execute()
+	_, http_resp, err := apiClient.
+		DefaultAPI.
+		VmStopPost(context.Background()).VMRequest(*vmRequest).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to stop VM: %w", err)
+		body, _ := io.ReadAll(http_resp.Body)
+		return fmt.Errorf("failed to stop VM: error: %s code: %v", string(body), err)
 	}
 
 	log.Infof("successfully stopped VM: %s", vmName)
@@ -43,9 +40,12 @@ func destroyVM(vmName string) error {
 		VmName: serverapi.PtrString(vmName),
 	}
 
-	_, _, err := apiClient.DefaultAPI.VmDestroyPost(context.Background()).VMRequest(*vmRequest).Execute()
+	_, http_resp, err := apiClient.
+		DefaultAPI.
+		VmDestroyPost(context.Background()).VMRequest(*vmRequest).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to destroy VM: %w", err)
+		body, _ := io.ReadAll(http_resp.Body)
+		return fmt.Errorf("failed to destroy VM: error: %s code: %v", string(body), err)
 	}
 
 	log.Infof("successfully destroyed VM: %s", vmName)
@@ -53,9 +53,10 @@ func destroyVM(vmName string) error {
 }
 
 func destroyAllVMs() error {
-	_, _, err := apiClient.DefaultAPI.VmDestroyAllPost(context.Background()).Execute()
+	_, http_resp, err := apiClient.DefaultAPI.VmDestroyAllPost(context.Background()).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to destroy all VMs: %w", err)
+		body, _ := io.ReadAll(http_resp.Body)
+		return fmt.Errorf("failed to destroy all VMs: error: %s code: %v", string(body), err)
 	}
 
 	log.Infof("destroyed all VMs")
@@ -70,9 +71,12 @@ func startVM(vmName string, kernel string, rootfs string, entryPoint string) err
 		EntryPoint: serverapi.PtrString(entryPoint),
 	}
 
-	resp, _, err := apiClient.DefaultAPI.VmStartPost(context.Background()).StartVMRequest(*startVMRequest).Execute()
+	resp, http_resp, err := apiClient.DefaultAPI.
+		VmStartPost(context.Background()).
+		StartVMRequest(*startVMRequest).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to start VM: %w", err)
+		body, _ := io.ReadAll(http_resp.Body)
+		return fmt.Errorf("failed to start VM: error: %s code: %v", string(body), err)
 	}
 
 	resp_bytes, err := resp.MarshalJSON()
@@ -84,9 +88,10 @@ func startVM(vmName string, kernel string, rootfs string, entryPoint string) err
 }
 
 func listAllVMs() error {
-	resp, _, err := apiClient.DefaultAPI.VmListGet(context.Background()).Execute()
+	resp, http_resp, err := apiClient.DefaultAPI.VmListGet(context.Background()).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to list VM: %w", err)
+		body, _ := io.ReadAll(http_resp.Body)
+		return fmt.Errorf("failed to list all VMs: error: %s code: %v", string(body), err)
 	}
 
 	resp_bytes, err := resp.MarshalJSON()
@@ -142,23 +147,23 @@ func listVM(vmName string) error {
 }
 
 func main() {
-	var err error
-	apiClient, err = createApiClient(defaultServerAddress)
-	if err != nil {
-		log.Fatalf("failed to initialize api client: %v", err)
-	}
-
 	app := &cli.App{
 		Name:  "vm-cli",
 		Usage: "A CLI for managing VMs",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:    "server",
-				Aliases: []string{"s"},
-				Value:   defaultServerAddress,
-				Usage:   "gRPC server address",
+				Name:     "config",
+				Aliases:  []string{"c"},
+				Required: true,
+				Usage:    "Path to config file",
 				Action: func(ctx *cli.Context, value string) error {
-					apiClient, err = createApiClient(value)
+					serverConfig, err := config.GetServerConfig(value)
+					if err != nil {
+						return fmt.Errorf("failed to get server config: %v", err)
+					}
+					log.Infof("server config: %v", serverConfig)
+
+					apiClient, err = createApiClient(fmt.Sprintf("%s:%s", serverConfig.Host, serverConfig.Port))
 					if err != nil {
 						return fmt.Errorf("failed to initialize api client: %v", err)
 					}
@@ -181,13 +186,11 @@ func main() {
 						Name:    "kernel",
 						Aliases: []string{"k"},
 						Usage:   "Path of the kernel image to be used",
-						Value:   defaultKernelPath,
 					},
 					&cli.StringFlag{
 						Name:    "rootfs",
 						Aliases: []string{"r"},
 						Usage:   "Path of the rootfs image to be used",
-						Value:   defaultRootfsPath,
 					},
 					&cli.StringFlag{
 						Name:     "entry-point",
@@ -267,7 +270,7 @@ func main() {
 		},
 	}
 
-	err = app.Run(os.Args)
+	err := app.Run(os.Args)
 	if err != nil {
 		log.Fatal(err)
 	}

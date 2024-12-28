@@ -6,5 +6,6 @@ hostservices:
     bridge_name: "br0"
     bridge_ip: "10.20.1.1/24"
     bridge_subnet: "10.20.1.0/24"
-    chv_bin: "resources/bin/cloud-hypervisor"
-    kernel: "resources/bin/vmlinux.bin"
+    chv_bin: "./resources/bin/cloud-hypervisor"
+    kernel: "./resources/bin/vmlinux.bin"
+    rootfs: "./out/chv-guestrootfs-ext4.img"
