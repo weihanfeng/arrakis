@@ -29,6 +29,8 @@ import (
 type vmStatus int
 
 type ServerConfig struct {
+	Host         string `mapstructure:"host"`
+	Port         string `mapstructure:"port"`
 	StateDir     string `mapstructure:"state_dir"`
 	BridgeName   string `mapstructure:"bridge_name"`
 	BridgeIP     string `mapstructure:"bridge_ip"`
@@ -39,13 +41,15 @@ type ServerConfig struct {
 
 func (c ServerConfig) String() string {
 	return fmt.Sprintf(`{
-StateDir:     %s
-BridgeName:   %s
-BridgeIP:     %s
+Host: %s
+Port: %s
+StateDir: %s
+BridgeName: %s
+BridgeIP: %s
 BridgeSubnet: %s
-KernelPath:   %s
-ChvBinPath:   %s
-}`, c.StateDir, c.BridgeName, c.BridgeIP, c.BridgeSubnet, c.KernelPath, c.ChvBinPath)
+KernelPath: %s
+ChvBinPath: %s
+}`, c.Host, c.Port, c.StateDir, c.BridgeName, c.BridgeIP, c.BridgeSubnet, c.KernelPath, c.ChvBinPath)
 }
 
 const (
