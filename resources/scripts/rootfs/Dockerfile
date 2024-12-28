@@ -68,10 +68,10 @@ RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 COPY out/chv-guestinit /opt/custom_scripts/guestinit
 
 # Optional binary that helps execute code.
-#COPY out/chv-lambda-codeserver /opt/custom_scripts/chv-lambda-codeserver
+#COPY out/chv-codeserver /opt/custom_scripts/chv-lambda-codeserver
 
 # Optional binary that helps execute shell commands.
-#COPY out/chv-lambda-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
+#COPY out/chv-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
 ##############
 
 # Make sure the user binaries are executable.

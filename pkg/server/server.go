@@ -395,7 +395,7 @@ func (s *Server) createVM(
 	})
 
 	// Forward port on the host to the codeserver.
-	err = forwardPortToCodeServerInVM(guestIP.IP.String(), config.CodeServerPort)
+	err = forwardPortToCodeServerInVM(guestIP.IP.String(), s.config.CodeServerPort)
 	if err != nil {
 		return fmt.Errorf("failed to forward port in the code server: %w", err)
 	}
@@ -406,7 +406,7 @@ func (s *Server) createVM(
 				"action":          "cleanup",
 				"api":             "createVM",
 				"ip":              guestIP.String(),
-				"codeserver_port": config.CodeServerPort},
+				"codeserver_port": s.config.CodeServerPort},
 		).Info("deleting codeserver port forward")
 		s.ipAllocator.FreeIP(guestIP.IP)
 	})
@@ -522,7 +522,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		Ip:             serverapi.PtrString(vm.ip.String()),
 		Status:         serverapi.PtrString(vm.status.String()),
 		TapDeviceName:  serverapi.PtrString(vm.tapDevice),
-		CodeServerPort: serverapi.PtrString(config.CodeServerPort),
+		CodeServerPort: serverapi.PtrString(s.config.CodeServerPort),
 	}, nil
 }
 

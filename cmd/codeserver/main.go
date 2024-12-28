@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abshkbh/chv-lambda/pkg/config"
-
 	log "github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v2"
+
+	"github.com/abshkbh/chv-lambda/pkg/config"
 )
 
 type codeServer struct {
@@ -177,15 +178,46 @@ func initializeRoutes(cs *codeServer) *http.ServeMux {
 
 func main() {
 	log.Info("starting codeserver...")
+	var codeServerConfig *config.CodeServerConfig
+	var configFile string
+
+	app := &cli.App{
+		Name:  "chv-codeserver",
+		Usage: "A daemon for executing code.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:        "config",
+				Aliases:     []string{"c"},
+				Required:    true,
+				Usage:       "Path to config file",
+				Destination: &configFile,
+			},
+		},
+		Action: func(ctx *cli.Context) error {
+			var err error
+			codeServerConfig, err = config.GetCodeServerConfig(configFile)
+			if err != nil {
+				return fmt.Errorf("server config not found: %v", err)
+			}
+			log.Infof("code server config: %v", codeServerConfig)
+			return nil
+		},
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.WithError(err).Fatal("code server exited with error")
+	}
+
 	cs := &codeServer{}
 	router := initializeRoutes(cs)
 
 	server := &http.Server{
-		Addr:    config.CodeServerPort,
+		Addr:    codeServerConfig.Port,
 		Handler: router,
 	}
 
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		log.WithError(err).Errorf("codeserver exited with: %v", err)
 	}

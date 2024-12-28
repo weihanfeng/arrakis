@@ -12,3 +12,6 @@ hostservices:
   client:
     server_host: "127.0.0.1"
     server_port: "7000"
+guestservices:
+  codeserver:
+    port: "4030"
