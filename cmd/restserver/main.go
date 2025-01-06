@@ -125,9 +125,9 @@ func main() {
 			&cli.StringFlag{
 				Name:        "config",
 				Aliases:     []string{"c"},
-				Required:    true,
 				Usage:       "Path to config file",
 				Destination: &configFile,
+				Value:       "./config.yaml",
 			},
 		},
 		Action: func(ctx *cli.Context) error {

@@ -54,7 +54,6 @@ const (
 	serialPortMode = "Tty"
 	// Case sensitive.
 	consolePortMode = "Off"
-	chvBinPath      = "/home/maverick/projects/chv-lambda/resources/bin/cloud-hypervisor"
 
 	numNetDeviceQueues      = 2
 	netDeviceQueueSizeBytes = 256
@@ -353,7 +352,7 @@ func (s *Server) createVM(
 		}
 	})
 
-	cmd := exec.Command(chvBinPath, "--api-socket", apiSocketPath)
+	cmd := exec.Command(s.config.ChvBinPath, "--api-socket", apiSocketPath)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	// Add VMs to a separate process group. Otherwise Ctrl-C goes to the VMs
@@ -394,10 +393,12 @@ func (s *Server) createVM(
 		s.ipAllocator.FreeIP(guestIP.IP)
 	})
 
-	// Forward port on the host to the codeserver.
-	err = forwardPortToCodeServerInVM(guestIP.IP.String(), s.config.CodeServerPort)
-	if err != nil {
-		return fmt.Errorf("failed to forward port in the code server: %w", err)
+	// Optionally, forward port on the host to the codeserver.
+	if s.config.CodeServerPort != "" {
+		err = forwardPortToCodeServerInVM(guestIP.IP.String(), s.config.CodeServerPort)
+		if err != nil {
+			return fmt.Errorf("failed to forward port in the code server: %w", err)
+		}
 	}
 	cleanup.Add(func() {
 		log.WithFields(

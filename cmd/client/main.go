@@ -152,26 +152,27 @@ func main() {
 		Usage: "A CLI for managing VMs",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "config",
-				Aliases:  []string{"c"},
-				Required: true,
-				Usage:    "Path to config file",
-				Action: func(ctx *cli.Context, value string) error {
-					clientConfig, err := config.GetClientConfig(value)
-					if err != nil {
-						return fmt.Errorf("failed to get client config: %v", err)
-					}
-					log.Infof("client config: %v", clientConfig)
-
-					apiClient, err = createApiClient(
-						fmt.Sprintf("%s:%s", clientConfig.ServerHost, clientConfig.ServerPort),
-					)
-					if err != nil {
-						return fmt.Errorf("failed to initialize api client: %v", err)
-					}
-					return nil
-				},
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "Path to config file",
+				Value:   "./config.yaml",
 			},
+		},
+		Before: func(ctx *cli.Context) error {
+			configPath := ctx.String("config")
+			clientConfig, err := config.GetClientConfig(configPath)
+			if err != nil {
+				return fmt.Errorf("failed to get client config: %v", err)
+			}
+			log.Infof("client config: %v", clientConfig)
+
+			apiClient, err = createApiClient(
+				fmt.Sprintf("%s:%s", clientConfig.ServerHost, clientConfig.ServerPort),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to initialize api client: %v", err)
+			}
+			return nil
 		},
 		Commands: []*cli.Command{
 			{
