@@ -37,6 +37,7 @@
   - [Build a custom rootfs for the guest](#build-a-custom-rootfs-for-the-guest)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [Ongoing Work](#ongoing-work)
 - [Contributing](#contributing)
 - [License](#license)
 ___
@@ -175,6 +176,14 @@ ___
   ```bash
   ./out/chv-client destroy -n foo
   ```
+
+---
+
+## Ongoing Work
+
+- The current focus is on a Python SDK on top of the [REST API](./api/server-api.yaml).
+
+- This SDK could be used to provide coding and general sandboxes to LLMs or AI Agents via tool use.
 
 ---
 
