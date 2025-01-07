@@ -2,13 +2,15 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-chv-starter-pack provides everything required to get started with creating, managing and configuring [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) based MicroVMs locally on Linux based machines.
+- MicroVMs are lightweight Virtual Machines (compared to traditional VMs) powered by Rust based Virtual Machine Managers such as [firecracker](https://github.com/firecracker-microvm/firecracker) and [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor).
+
+- **chv-starter-pack** provides everything required to get started with creating, managing and configuring [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) based MicroVMs locally on Linux based machines.
 
 ---
 
 ## Features
 
-`chv-starter-pack` includes the following daemons and features -
+`chv-starter-pack` includes the following services and features -
 
 - **chv-restserver**
   - A daemon that exposes a REST API to *start*, *stop*, *destroy*, *list-all* VMs. Every VM started is managed by this server i.e. the lifetime of each VM is tied to the lifetime of this daemon.
@@ -19,6 +21,9 @@ chv-starter-pack provides everything required to get started with creating, mana
   - [Code](./cmd/client)
 - Dockerfile based rootfs customization.
   - Easily add packages and binaries to your VM's rootfs by manipulating a [Dockerfile](./resources/scripts/rootfs/Dockerfile).
+- Out of the box networking setup for the guest.
+  - Each VM gets a tap device that gets added to a Linux bridge on the host.
+  - ssh access to the VM.
 - Prebuilt Linux kernel for the VMs
   - Or pass your own kernel to **chv-client** while starting VMs.
 
@@ -137,32 +142,39 @@ ___
 - In a separate shell we will use the CLI client to create and manage VMs.
 
 - Start a VM named `foo`. It returns metadata about the VM which could be used to interacting with the VM.
-```bash
-./out/chv-client start -n foo
-started VM: {"codeServerPort":"","ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}
-```
+  ```bash
+  ./out/chv-client start -n foo
+  started VM: {"codeServerPort":"","ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}
+  ```
+
+- SSH into the VM.
+  - ssh credentials are configured [here](./resources/scripts/rootfs/Dockerfile#L6).
+  ```bash
+  # Use the IP returned. Password is "elara0000"
+  ssh elara@10.20.1.2
+  ```
 
 - Inspecting a VM named `foo`.
-```bash
-./out/chv-client list -n foo
-VM: {"ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}
-```
+  ```bash
+  ./out/chv-client list -n foo
+  VM: {"ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}
+  ```
 
 - List all the VMs.
-```bash
-./out/chv-client list-all
-VMs: {"vms":[{"ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}]}
-```
+  ```bash
+  ./out/chv-client list-all
+  VMs: {"vms":[{"ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}]}
+  ```
 
 - Stop the VM.
-```bash
-./out/chv-client stop -n foo
-```
+  ```bash
+  ./out/chv-client stop -n foo
+  ```
 
 - Destroy the VM.
-```bash
-./out/chv-client destroy -n foo
-```
+  ```bash
+  ./out/chv-client destroy -n foo
+  ```
 
 ---
 
