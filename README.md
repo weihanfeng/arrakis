@@ -6,6 +6,8 @@
 
 - **chv-starter-pack** provides everything required to get started with creating, managing and configuring [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) based MicroVMs locally on Linux based machines.
 
+- [Ongoing Work][#ongoing-work] on a Python SDK to give LLMs a coding and / or general purpose secure sandbox.
+
 ---
 
 ## Features
