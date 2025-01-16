@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -32,6 +33,7 @@ const (
 	vmStatusStarted vmStatus = iota
 	vmStatusRunning
 	vmStatusStopped
+	vmStatusPaused
 )
 
 func (status vmStatus) String() string {
@@ -42,6 +44,8 @@ func (status vmStatus) String() string {
 		return "RUNNING"
 	case vmStatusStopped:
 		return "STOPPED"
+	case vmStatusPaused:
+		return "PAUSED"
 	default:
 		return "UNKNOWN"
 	}
@@ -680,5 +684,79 @@ func (s *Server) ListVM(ctx context.Context, vmName string) (*serverapi.ListVMRe
 		Ip:            serverapi.PtrString(vm.ip.String()),
 		Status:        serverapi.PtrString(vm.status.String()),
 		TapDeviceName: serverapi.PtrString(vm.tapDevice),
+	}, nil
+}
+
+func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotRequest) (*serverapi.VMSnapshotResponse, error) {
+	vmName := req.GetVmName()
+	outputDir := req.GetOutputFile()
+	logger := log.WithField("vmName", vmName)
+	logger.Infof("received request to snapshot VM")
+
+	vm, exists := s.vms[vmName]
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "vm %s not found", vmName)
+	}
+
+	// Create the output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		logger.WithError(err).Error("failed to create snapshot directory")
+		return nil, fmt.Errorf("failed to create snapshot directory: %w", err)
+	}
+
+	// Pause the VM first as this is a prerequisite for taking a snapshot as per the CHV API spec.
+	pauseReq := vm.apiClient.DefaultAPI.PauseVM(ctx)
+	resp, err := pauseReq.Execute()
+	if err != nil {
+		return nil, fmt.Errorf("failed to pause VM: %w", err)
+	}
+	if resp.StatusCode != 204 {
+		return nil, fmt.Errorf("failed to pause VM. bad status: %v", resp)
+	}
+	logger.Info("VM paused successfully")
+	vm.status = vmStatusPaused
+
+	// Ensure we resume the VM even if snapshot fails.
+	defer func() {
+		resumeReq := vm.apiClient.DefaultAPI.ResumeVM(ctx)
+		resp, err := resumeReq.Execute()
+		if err != nil {
+			logger.Errorf("failed to resume VM: %v", err)
+			return
+		}
+		if resp.StatusCode != 204 {
+			logger.Errorf("failed to resume VM. bad status: %v", resp)
+			return
+		}
+		logger.Info("VM resumed successfully")
+		vm.status = vmStatusRunning
+	}()
+
+	// The API expects a "file://" URL.
+	outputUrl := fmt.Sprintf("file://%s", outputDir)
+	snapshotConfig := chvapi.VmSnapshotConfig{
+		DestinationUrl: &outputUrl,
+	}
+	logger.WithField("destination", outputDir).Info("initiating VM snapshot")
+
+	snapshotReq := vm.apiClient.DefaultAPI.VmSnapshotPut(ctx)
+	snapshotReq = snapshotReq.VmSnapshotConfig(snapshotConfig)
+	resp, err = snapshotReq.Execute()
+	if err != nil {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to create snapshot: %d: %s: %w", resp.StatusCode, string(body), err)
+	}
+
+	if resp.StatusCode != 204 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to create snapshot: %d: %s", resp.StatusCode, string(body))
+	}
+
+	logger.WithFields(log.Fields{
+		"destination": outputDir,
+		"statusCode":  resp.StatusCode,
+	}).Info("VM snapshot created successfully")
+	return &serverapi.VMSnapshotResponse{
+		Success: serverapi.PtrBool(true),
 	}, nil
 }

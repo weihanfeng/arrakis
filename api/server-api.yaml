@@ -115,6 +115,26 @@ paths:
                 $ref: '#/components/schemas/ListVMResponse'
         '500':
           description: Internal server error
+  /vm/snapshot:
+    post:
+      summary: Create a snapshot of a VM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMSnapshotRequest'
+      responses:
+        '200':
+          description: Successfully created snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMResponse'
+        '400':
+          description: Invalid request body
+        '500':
+          description: Internal server error
 components:
   schemas:
     StartVMRequest:
@@ -190,3 +210,19 @@ components:
           type: string
         tapDeviceName:
           type: string
+    VMSnapshotRequest:
+      type: object
+      properties:
+        vmName:
+          type: string
+          description: Name of the VM to snapshot
+        outputFile:
+          type: string
+          description: Path where the snapshot should be saved
+      required:
+        - vmName
+    VMSnapshotResponse:
+      type: object
+      properties:
+        success:
+          type: boolean

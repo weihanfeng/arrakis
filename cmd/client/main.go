@@ -6,6 +6,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
@@ -146,9 +148,38 @@ func listVM(vmName string) error {
 	return nil
 }
 
+func snapshotVM(vmName string, outputDir string) error {
+	if outputDir == "" {
+		timestamp := time.Now().Format("20060102-150405")
+		outputDir = fmt.Sprintf("snapshot-%s-%s", vmName, timestamp)
+	}
+
+	// Convert the path to absolute path
+	absPath, err := filepath.Abs(outputDir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	vmSnapshotRequest := &serverapi.VMSnapshotRequest{
+		VmName:     vmName,
+		OutputFile: &absPath,
+	}
+
+	_, http_resp, err := apiClient.DefaultAPI.
+		VmSnapshotPost(context.Background()).
+		VMSnapshotRequest(*vmSnapshotRequest).Execute()
+	if err != nil {
+		body, _ := io.ReadAll(http_resp.Body)
+		return fmt.Errorf("failed to create snapshot: error: %s code: %v", string(body), err)
+	}
+
+	log.Infof("successfully created snapshot for VM %s in directory %s", vmName, outputDir)
+	return nil
+}
+
 func main() {
 	app := &cli.App{
-		Name:  "vm-cli",
+		Name:  "chv-client",
 		Usage: "A CLI for managing VMs",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -268,6 +299,27 @@ func main() {
 				},
 				Action: func(ctx *cli.Context) error {
 					return listVM(ctx.String("name"))
+				},
+			},
+			{
+				Name:  "snapshot",
+				Usage: "Create a snapshot of a VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "output",
+						Aliases:  []string{"o"},
+						Usage:    "Output directory path for the snapshot",
+						Required: false,
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					return snapshotVM(ctx.String("name"), ctx.String("output"))
 				},
 			},
 		},

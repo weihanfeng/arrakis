@@ -114,6 +114,23 @@ func (s *restServer) listVM(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func (s *restServer) snapshotVM(w http.ResponseWriter, r *http.Request) {
+	var req serverapi.VMSnapshotRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := s.vmServer.SnapshotVM(r.Context(), &req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create snapshot: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 func main() {
 	var serverConfig *config.ServerConfig
 	var configFile string
@@ -164,6 +181,7 @@ func main() {
 	r.HandleFunc("/vm/destroy-all", s.destroyAllVMs).Methods("POST")
 	r.HandleFunc("/vm/list", s.listAllVMs).Methods("GET")
 	r.HandleFunc("/vm/{name}", s.listVM).Methods("GET")
+	r.HandleFunc("/vm/snapshot", s.snapshotVM).Methods("POST")
 
 	// Start HTTP server
 	srv := &http.Server{
