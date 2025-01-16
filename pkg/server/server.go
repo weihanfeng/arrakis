@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -30,7 +32,7 @@ import (
 type vmStatus int
 
 const (
-	vmStatusStarted vmStatus = iota
+	vmStatusCreated vmStatus = iota
 	vmStatusRunning
 	vmStatusStopped
 	vmStatusPaused
@@ -38,8 +40,8 @@ const (
 
 func (status vmStatus) String() string {
 	switch status {
-	case vmStatusStarted:
-		return "STARTED"
+	case vmStatusCreated:
+		return "CREATED"
 	case vmStatusRunning:
 		return "RUNNING"
 	case vmStatusStopped:
@@ -307,15 +309,20 @@ func NewServer(config config.ServerConfig) (*Server, error) {
 	}, nil
 }
 
+func getTapDeviceName(vmName string) string {
+	return fmt.Sprintf("tap-%s", vmName)
+}
+
 func (s *Server) createVM(
 	ctx context.Context,
 	vmName string,
 	kernelPath string,
 	rootfsPath string,
 	entryPoint string,
-) error {
+	forRestore bool,
+) (*vm, error) {
 	cleanup := cleanup.Make(func() {
-		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("done")
+		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("clean up done")
 	})
 
 	defer func() {
@@ -326,7 +333,7 @@ func (s *Server) createVM(
 	vmStateDir := getVmStateDirPath(s.config.StateDir, vmName)
 	err := os.MkdirAll(vmStateDir, 0755)
 	if err != nil {
-		return fmt.Errorf("failed to create vm state dir: %w", err)
+		return nil, fmt.Errorf("failed to create vm state dir: %w", err)
 	}
 	cleanup.Add(func() {
 		if err := os.RemoveAll(vmStateDir); err != nil {
@@ -343,18 +350,8 @@ func (s *Server) createVM(
 	logFilePath := path.Join(vmStateDir, "log")
 	logFile, err := os.Create(logFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to create log file: %w", err)
+		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
-
-	tapDevice, err := s.fountain.CreateTapDevice(vmName)
-	if err != nil {
-		return fmt.Errorf("failed to create tap device: %w", err)
-	}
-	cleanup.Add(func() {
-		if err := s.fountain.DestroyTapDevice(vmName); err != nil {
-			log.WithError(err).Errorf("failed to delete tap device: %s", tapDevice)
-		}
-	})
 
 	cmd := exec.Command(s.config.ChvBinPath, "--api-socket", apiSocketPath)
 	cmd.Stdout = logFile
@@ -368,7 +365,7 @@ func (s *Server) createVM(
 
 	err = cmd.Start()
 	if err != nil {
-		return fmt.Errorf("error spawning vm: %w", err)
+		return nil, fmt.Errorf("error spawning vm: %w", err)
 	}
 	cleanup.Add(func() {
 		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("reap VMM process")
@@ -377,7 +374,7 @@ func (s *Server) createVM(
 
 	err = waitForServer(ctx, apiClient, 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("error waiting for vm: %w", err)
+		return nil, fmt.Errorf("error waiting for vm: %w", err)
 	}
 	cleanup.Add(func() {
 		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("kill VMM process")
@@ -387,78 +384,76 @@ func (s *Server) createVM(
 	})
 	log.WithField("vmname", vmName).Infof("VM started Pid:%d", cmd.Process.Pid)
 
-	guestIP, err := s.ipAllocator.AllocateIP()
-	if err != nil {
-		return fmt.Errorf("error allocating guest ip: %w", err)
-	}
-	log.Infof("Allocated IP: %v", guestIP)
-	cleanup.Add(func() {
-		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM", "ip": guestIP.String()}).Info("freeing IP")
-		s.ipAllocator.FreeIP(guestIP.IP)
-	})
-
-	// Optionally, forward port on the host to the codeserver.
-	if s.config.CodeServerPort != "" {
-		err = forwardPortToCodeServerInVM(guestIP.IP.String(), s.config.CodeServerPort)
+	var guestIP *net.IPNet
+	var tapDevice string
+	// We only need to setup the network and call the chv create VM API if we are not restoring
+	// from a snapshot.
+	if !forRestore {
+		tapDevice = getTapDeviceName(vmName)
+		var err error
+		err = s.fountain.CreateTapDevice(tapDevice)
 		if err != nil {
-			return fmt.Errorf("failed to forward port in the code server: %w", err)
+			return nil, fmt.Errorf("failed to create tap device: %w", err)
 		}
-	}
-	cleanup.Add(func() {
-		log.WithFields(
-			log.Fields{
-				"vmname":          vmName,
-				"action":          "cleanup",
-				"api":             "createVM",
-				"ip":              guestIP.String(),
-				"codeserver_port": s.config.CodeServerPort},
-		).Info("deleting codeserver port forward")
-		s.ipAllocator.FreeIP(guestIP.IP)
-	})
+		cleanup.Add(func() {
+			if err := s.fountain.DestroyTapDevice(tapDevice); err != nil {
+				log.WithError(err).Errorf("failed to delete tap device: %s", tapDevice)
+			}
+		})
 
-	vmConfig := chvapi.VmConfig{
-		Payload: chvapi.PayloadConfig{
-			Kernel:  String(kernelPath),
-			Cmdline: String(getKernelCmdLine(s.config.BridgeIP, guestIP.String(), entryPoint)),
-		},
-		Disks:   []chvapi.DiskConfig{{Path: rootfsPath}},
-		Cpus:    &chvapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
-		Memory:  &chvapi.MemoryConfig{Size: memorySizeBytes},
-		Serial:  chvapi.NewConsoleConfig(serialPortMode),
-		Console: chvapi.NewConsoleConfig(consolePortMode),
-		Net:     []chvapi.NetConfig{{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
-	}
-	req := apiClient.DefaultAPI.CreateVM(ctx)
-	req = req.VmConfig(vmConfig)
-
-	// Execute the request
-	resp, err := req.Execute()
-	if err != nil {
-		return fmt.Errorf("failed to start VM: %w", err)
-	}
-	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		return fmt.Errorf("failed to start VM. bad status: %v", resp)
-	}
-
-	resp, err = apiClient.DefaultAPI.BootVM(ctx).Execute()
-	if err != nil {
-		return fmt.Errorf("failed to boot VM resp.Body: %v: %w", resp.Body, err)
-	}
-	if resp.StatusCode != 200 && resp.StatusCode != 204 {
-		return fmt.Errorf("failed to boot VM. bad status: %v", resp)
-	}
-	cleanup.Add(func() {
-		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("shutting down VM")
-		shutdown_req := apiClient.DefaultAPI.ShutdownVM(ctx)
-		resp, err := shutdown_req.Execute()
+		guestIP, err = s.ipAllocator.AllocateIP()
 		if err != nil {
-			log.WithError(err).Errorf("failed to shutdown VM: %v", err)
+			return nil, fmt.Errorf("error allocating guest ip: %w", err)
 		}
+		log.Infof("Allocated IP: %v", guestIP)
+		cleanup.Add(func() {
+			log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM", "ip": guestIP.String()}).Info("freeing IP")
+			s.ipAllocator.FreeIP(guestIP.IP)
+		})
 
-		if resp.StatusCode != 200 && resp.StatusCode != 204 {
-			log.WithError(err).Errorf("failed to shutdown VM. bad status: %v", resp)
+		// Optionally, forward port on the host to the codeserver.
+		if s.config.CodeServerPort != "" {
+			err = forwardPortToCodeServerInVM(guestIP.IP.String(), s.config.CodeServerPort)
+			if err != nil {
+				return nil, fmt.Errorf("failed to forward port in the code server: %w", err)
+			}
 		}
-	})
+		cleanup.Add(func() {
+			log.WithFields(
+				log.Fields{
+					"vmname":          vmName,
+					"action":          "cleanup",
+					"api":             "createVM",
+					"ip":              guestIP.String(),
+					"codeserver_port": s.config.CodeServerPort},
+			).Info("deleting codeserver port forward")
+			s.ipAllocator.FreeIP(guestIP.IP)
+		})
+
+		vmConfig := chvapi.VmConfig{
+			Payload: chvapi.PayloadConfig{
+				Kernel:  String(kernelPath),
+				Cmdline: String(getKernelCmdLine(s.config.BridgeIP, guestIP.String(), entryPoint)),
+			},
+			Disks:   []chvapi.DiskConfig{{Path: rootfsPath}},
+			Cpus:    &chvapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
+			Memory:  &chvapi.MemoryConfig{Size: memorySizeBytes},
+			Serial:  chvapi.NewConsoleConfig(serialPortMode),
+			Console: chvapi.NewConsoleConfig(consolePortMode),
+			Net:     []chvapi.NetConfig{{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
+		}
+		log.Info("Calling CreateVM")
+		req := apiClient.DefaultAPI.CreateVM(ctx)
+		req = req.VmConfig(vmConfig)
+
+		resp, err := req.Execute()
+		if err != nil {
+			return nil, fmt.Errorf("failed to start VM: %w", err)
+		}
+		if resp.StatusCode != 204 {
+			return nil, fmt.Errorf("failed to start VM. bad status: %v", resp)
+		}
+	}
 
 	vm := &vm{
 		name:          vmName,
@@ -473,6 +468,59 @@ func (s *Server) createVM(
 	log.Infof("Successfully created VM: %s", vmName)
 	s.vms[vmName] = vm
 	cleanup.Release()
+	return vm, nil
+}
+
+func (v *vm) boot(
+	ctx context.Context,
+) error {
+	resp, err := v.apiClient.DefaultAPI.BootVM(ctx).Execute()
+	if err != nil {
+		return fmt.Errorf("failed to boot VM resp.Body: %v: %w", resp.Body, err)
+	}
+	if resp.StatusCode != 204 {
+		return fmt.Errorf("failed to boot VM. bad status: %v", resp)
+	}
+
+	log.Infof("Successfully booted VM: %s", v.name)
+	v.status = vmStatusRunning
+	return nil
+}
+
+func (v *vm) resume(
+	ctx context.Context,
+) error {
+	resp, err := v.apiClient.DefaultAPI.ResumeVM(ctx).Execute()
+	if err != nil {
+		return fmt.Errorf("failed to resume VM resp.Body: %v: %w", resp.Body, err)
+	}
+	if resp.StatusCode != 204 {
+		return fmt.Errorf("failed to resume VM. bad status: %v", resp)
+	}
+
+	log.Infof("Successfully resumed VM: %s", v.name)
+	v.status = vmStatusRunning
+	return nil
+}
+
+func (v *vm) restore(
+	ctx context.Context,
+	snapshotPath string,
+) error {
+	// The snapshot path is a "file://" URL.
+	req := v.apiClient.DefaultAPI.VmRestorePut(ctx)
+	req = req.RestoreConfig(chvapi.RestoreConfig{
+		SourceUrl: fmt.Sprintf("file://%s", snapshotPath),
+	})
+
+	resp, err := req.Execute()
+	if err != nil {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to restore from snapshot: %d: %s: %w", resp.StatusCode, string(body), err)
+	}
+	if resp.StatusCode != 204 {
+		return fmt.Errorf("failed to restore from snapshot. bad status: %v", resp)
+	}
 	return nil
 }
 
@@ -484,6 +532,7 @@ type Server struct {
 }
 
 func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*serverapi.StartVMResponse, error) {
+	log.Infof("Server config in StartVM: %+v", s.config)
 	vmName := req.GetVmName()
 	entryPoint := req.GetEntryPoint()
 	kernelPath := req.GetKernel()
@@ -507,18 +556,45 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 			return nil, fmt.Errorf("failed to boot existing VM resp.Body: %v: %w", resp.Body, err)
 		}
 
-		if resp.StatusCode >= 300 {
+		if resp.StatusCode != 204 {
 			return nil, fmt.Errorf("failed to boot existing VM. bad status: %v", resp)
 		}
 		// This is set by `createVM` when the VM is new.
 		vm.status = vmStatusRunning
 	} else {
-		err := s.createVM(ctx, vmName, kernelPath, rootfsPath, entryPoint)
+		cleanup := cleanup.Make(func() {
+			logger.Info("start VM clean up done")
+		})
+		defer func() {
+			// Won't do anything if no error since we call `Release` it at the end.
+			cleanup.Clean()
+		}()
+
+		var err error
+		vm, err = s.createVM(ctx, vmName, kernelPath, rootfsPath, entryPoint, false)
 		if err != nil {
-			logger.Errorf("failed to start: %v", err)
+			logger.Errorf("failed to create VM: %v", err)
 			return nil, err
 		}
-		vm = s.vms[vmName]
+
+		cleanup.Add(func() {
+			logger.Info("shutting down VM")
+			resp, err := vm.apiClient.DefaultAPI.ShutdownVM(ctx).Execute()
+			if err != nil {
+				logger.WithError(err).Errorf("failed to shutdown VM: %v", err)
+			}
+
+			if resp.StatusCode != 204 {
+				logger.WithError(err).Errorf("failed to shutdown VM. bad status: %v", resp)
+			}
+		})
+
+		err = vm.boot(ctx)
+		if err != nil {
+			logger.Errorf("failed to boot VM: %v", err)
+			return nil, err
+		}
+		cleanup.Release()
 	}
 
 	logger.Infof("VM started")
@@ -608,7 +684,7 @@ func (s *Server) destroyVM(ctx context.Context, vmName string) error {
 		log.Warnf("Failed to delete directory %s: %v", vm.stateDirPath, err)
 	}
 
-	err = s.fountain.DestroyTapDevice(vmName)
+	err = s.fountain.DestroyTapDevice(vm.tapDevice)
 	if err != nil {
 		log.Warnf("failed to destroy the tap device for vm: %s: %v", vmName, err)
 	}
@@ -661,9 +737,14 @@ func (s *Server) ListAllVMs(ctx context.Context) (*serverapi.ListAllVMsResponse,
 	var vms []serverapi.ListAllVMsResponseVmsInner
 
 	for _, vm := range s.vms {
+		var ipString string
+		if vm.ip != nil {
+			ipString = vm.ip.String()
+		}
+
 		vmInfo := serverapi.ListAllVMsResponseVmsInner{
 			VmName:        serverapi.PtrString(vm.name),
-			Ip:            serverapi.PtrString(vm.ip.String()),
+			Ip:            serverapi.PtrString(ipString),
 			Status:        serverapi.PtrString(vm.status.String()),
 			TapDeviceName: serverapi.PtrString(vm.tapDevice),
 		}
@@ -679,9 +760,14 @@ func (s *Server) ListVM(ctx context.Context, vmName string) (*serverapi.ListVMRe
 		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
 	}
 
+	var ipString string
+	if vm.ip != nil {
+		ipString = vm.ip.String()
+	}
+
 	return &serverapi.ListVMResponse{
 		VmName:        serverapi.PtrString(vm.name),
-		Ip:            serverapi.PtrString(vm.ip.String()),
+		Ip:            serverapi.PtrString(ipString),
 		Status:        serverapi.PtrString(vm.status.String()),
 		TapDeviceName: serverapi.PtrString(vm.tapDevice),
 	}, nil
@@ -759,4 +845,134 @@ func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotReques
 	return &serverapi.VMSnapshotResponse{
 		Success: serverapi.PtrBool(true),
 	}, nil
+}
+
+func (s *Server) RestoreVM(ctx context.Context, req *serverapi.VMRestoreRequest) (*serverapi.VMRestoreResponse, error) {
+	vmName := req.GetVmName()
+	snapshotPath := req.GetSnapshotPath()
+	logger := log.WithFields(log.Fields{
+		"vmName":       vmName,
+		"snapshotPath": snapshotPath,
+	})
+	logger.Info("received request to restore VM from snapshot")
+
+	cleanup := cleanup.Make(func() {
+		logger.Info("restore VM clean up done")
+	})
+
+	defer func() {
+		// Won't do anything if no error since we call `Release` it at the end.
+		cleanup.Clean()
+	}()
+
+	tapDevice, guestIP, err := parseNetworkDataFromSnapshotConfig(snapshotPath + "/config.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tap device from config: %w", err)
+	}
+	log.WithFields(log.Fields{
+		"tapDevice": tapDevice,
+		"guestIP":   guestIP.IP.String(),
+	}).Info("parse network data from snapshot config")
+
+	err = s.ipAllocator.ClaimIP(guestIP.IP)
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim IP: %w", err)
+	}
+
+	err = s.fountain.CreateTapDevice(tapDevice)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tap device: %w", err)
+	}
+	cleanup.Add(func() {
+		log.Errorf("TODO: destroy tap device: %s", tapDevice)
+	})
+
+	vm, err := s.createVM(ctx, vmName, "", "", "", true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create VM for restore: %w", err)
+	}
+	vm.tapDevice = tapDevice
+	vm.ip = guestIP
+	// From this point on we need to clean up the VM if the restore fails.
+	cleanup.Add(func() {
+		err := s.destroyVM(ctx, vmName)
+		log.WithError(err).Errorf("failed to destroy VM during restore cleanup")
+	})
+	log.WithField("guestIP", guestIP.IP.String()).Info("restored VM")
+
+	err = vm.restore(ctx, snapshotPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to restore VM: %w", err)
+	}
+
+	err = vm.resume(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resume VM: %w", err)
+	}
+
+	cleanup.Release()
+	return &serverapi.VMRestoreResponse{
+		Success: serverapi.PtrBool(true),
+	}, nil
+}
+
+type NetworkConfig struct {
+	Tap string `json:"tap"`
+}
+
+type PayloadConfig struct {
+	Firmware  *string `json:"firmware"`
+	Kernel    *string `json:"kernel"`
+	Cmdline   *string `json:"cmdline"`
+	Initramfs *string `json:"initramfs"`
+}
+
+type VMConfig struct {
+	Net     *[]NetworkConfig `json:"net"`
+	Payload PayloadConfig    `json:"payload"`
+}
+
+func extractGuestIPFromCmdline(cmdline string) (*net.IPNet, error) {
+	// Look for guest_ip="<ip>" in the cmdline.
+	re := regexp.MustCompile(`guest_ip="([^"]+)"`)
+	matches := re.FindStringSubmatch(cmdline)
+	if len(matches) < 2 {
+		return nil, fmt.Errorf("guest_ip not found in cmdline")
+	}
+
+	// matches[1] contains the IP address with CIDR
+	log.Infof("cmdline: %s", matches[1])
+	ip, ipNet, err := net.ParseCIDR(matches[1])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CIDR %q: %w", matches[1], err)
+	}
+	ipNet.IP = ip
+	return ipNet, nil
+}
+
+// Returns the tap device name and the guest IP address from the snapshot config.
+func parseNetworkDataFromSnapshotConfig(configPath string) (string, *net.IPNet, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var config VMConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return "", nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	if config.Net == nil || len(*config.Net) == 0 {
+		return "", nil, fmt.Errorf("no network configuration found")
+	}
+
+	if config.Payload.Cmdline == nil {
+		return "", nil, fmt.Errorf("no cmdline found")
+	}
+
+	guestIP, err := extractGuestIPFromCmdline(*config.Payload.Cmdline)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to extract guest IP from cmdline: %w", err)
+	}
+	return (*config.Net)[0].Tap, guestIP, nil
 }

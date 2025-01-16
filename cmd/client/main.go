@@ -177,6 +177,32 @@ func snapshotVM(vmName string, outputDir string) error {
 	return nil
 }
 
+func restoreVM(vmName string, snapshotPath string) error {
+	absPath, err := filepath.Abs(snapshotPath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	vmRestoreRequest := &serverapi.VMRestoreRequest{
+		VmName:       vmName,
+		SnapshotPath: absPath,
+	}
+
+	_, http_resp, err := apiClient.DefaultAPI.
+		VmRestorePost(context.Background()).
+		VMRestoreRequest(*vmRestoreRequest).Execute()
+	if err != nil {
+		if http_resp == nil {
+			return fmt.Errorf("failed to restore VM: error: %w", err)
+		}
+		body, _ := io.ReadAll(http_resp.Body)
+		return fmt.Errorf("failed to restore VM: error: %s code: %w", string(body), err)
+	}
+
+	log.Infof("successfully restored VM %s from snapshot %s", vmName, snapshotPath)
+	return nil
+}
+
 func main() {
 	app := &cli.App{
 		Name:  "chv-client",
@@ -320,6 +346,27 @@ func main() {
 				},
 				Action: func(ctx *cli.Context) error {
 					return snapshotVM(ctx.String("name"), ctx.String("output"))
+				},
+			},
+			{
+				Name:  "restore",
+				Usage: "Restore a VM from a snapshot",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name to give to the restored VM",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "snapshot",
+						Aliases:  []string{"s"},
+						Usage:    "Path to the snapshot directory",
+						Required: true,
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					return restoreVM(ctx.String("name"), ctx.String("snapshot"))
 				},
 			},
 		},

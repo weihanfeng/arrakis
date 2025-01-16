@@ -9,7 +9,6 @@ import (
 type IPAllocator struct {
 	subnet    *net.IPNet
 	available []net.IP
-	allocated map[string]bool
 	mutex     sync.Mutex
 }
 
@@ -39,7 +38,6 @@ func NewIPAllocator(subnetCIDR string) (*IPAllocator, error) {
 	allocator := &IPAllocator{
 		subnet:    subnet,
 		available: []net.IP{},
-		allocated: make(map[string]bool),
 	}
 
 	// The first one will be reserved as the gateway. Start from x.x.x.2.
@@ -63,7 +61,6 @@ func (a *IPAllocator) AllocateIP() (*net.IPNet, error) {
 
 	ip := a.available[0]
 	a.available = a.available[1:]
-	a.allocated[ip.String()] = true
 
 	return &net.IPNet{
 		IP:   ip,
@@ -79,12 +76,26 @@ func (a *IPAllocator) FreeIP(ip net.IP) error {
 		return fmt.Errorf("IP %v is not in the subnet", ip)
 	}
 
-	if !a.allocated[ip.String()] {
-		return fmt.Errorf("IP %v is not allocated", ip)
+	a.available = append(a.available, copyIP(ip))
+	return nil
+}
+
+// ClaimIP attempts to claim a specific IP address from the pool.
+// Returns error if the IP is already allocated or not in the subnet.
+func (a *IPAllocator) ClaimIP(ip net.IP) error {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	if !a.subnet.Contains(ip) {
+		return fmt.Errorf("IP %v is not in the subnet", ip)
 	}
 
-	delete(a.allocated, ip.String())
-	a.available = append(a.available, copyIP(ip))
-
+	for i, availIP := range a.available {
+		if availIP.Equal(ip) {
+			// Remove this IP from available pool
+			a.available = append(a.available[:i], a.available[i+1:]...)
+			break
+		}
+	}
 	return nil
 }

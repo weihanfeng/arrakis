@@ -1,3 +1,4 @@
 resources/bin/
 out/
 *rules
+.vscode/

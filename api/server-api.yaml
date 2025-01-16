@@ -135,6 +135,26 @@ paths:
           description: Invalid request body
         '500':
           description: Internal server error
+  /vm/restore:
+    post:
+      summary: Restore a VM from a snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMRestoreRequest'
+      responses:
+        '200':
+          description: Successfully restored VM from snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMRestoreResponse'
+        '400':
+          description: Invalid request body
+        '500':
+          description: Internal server error
 components:
   schemas:
     StartVMRequest:
@@ -222,6 +242,23 @@ components:
       required:
         - vmName
     VMSnapshotResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+    VMRestoreRequest:
+      type: object
+      properties:
+        vmName:
+          type: string
+          description: Name to give to the restored VM
+        snapshotPath:
+          type: string
+          description: Path to the snapshot directory to restore from
+      required:
+        - vmName
+        - snapshotPath
+    VMRestoreResponse:
       type: object
       properties:
         success:
