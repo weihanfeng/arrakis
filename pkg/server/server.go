@@ -13,6 +13,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -84,6 +85,7 @@ func Bool(b bool) *bool {
 }
 
 type vm struct {
+	lock          sync.RWMutex
 	name          string
 	stateDirPath  string
 	apiSocketPath string
@@ -148,7 +150,12 @@ func forwardPortToCodeServerInVM(vmIP string, port string) error {
 }
 
 // setupBridgeAndFirewall sets up a bridge and firewall rules for the given bridge name, IP address, and subnet.
-func setupBridgeAndFirewall(backupFile string, bridgeName string, bridgeIP string, bridgeSubnet string) error {
+func setupBridgeAndFirewall(
+	backupFile string,
+	bridgeName string,
+	bridgeIP string,
+	bridgeSubnet string,
+) error {
 	output, err := exec.Command("iptables-save").Output()
 	if err != nil {
 		return fmt.Errorf("failed to run iptables-save: %w", err)
@@ -284,6 +291,66 @@ func reapProcess(process *os.Process, logger *log.Entry, timeout time.Duration) 
 	return fmt.Errorf("VM process was force killed after timeout")
 }
 
+type NetworkConfig struct {
+	Tap string `json:"tap"`
+}
+
+type PayloadConfig struct {
+	Firmware  *string `json:"firmware"`
+	Kernel    *string `json:"kernel"`
+	Cmdline   *string `json:"cmdline"`
+	Initramfs *string `json:"initramfs"`
+}
+
+type VMConfig struct {
+	Net     *[]NetworkConfig `json:"net"`
+	Payload PayloadConfig    `json:"payload"`
+}
+
+func extractGuestIPFromCmdline(cmdline string) (*net.IPNet, error) {
+	// Look for guest_ip="<ip>" in the cmdline.
+	re := regexp.MustCompile(`guest_ip="([^"]+)"`)
+	matches := re.FindStringSubmatch(cmdline)
+	if len(matches) < 2 {
+		return nil, fmt.Errorf("guest_ip not found in cmdline")
+	}
+
+	// matches[1] contains the IP address with CIDR.
+	ip, ipNet, err := net.ParseCIDR(matches[1])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CIDR %q: %w", matches[1], err)
+	}
+	ipNet.IP = ip
+	return ipNet, nil
+}
+
+// Returns the tap device name and the guest IP address from the snapshot config.
+func parseNetworkDataFromSnapshotConfig(configPath string) (string, *net.IPNet, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var config VMConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return "", nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	if config.Net == nil || len(*config.Net) == 0 {
+		return "", nil, fmt.Errorf("no network configuration found")
+	}
+
+	if config.Payload.Cmdline == nil {
+		return "", nil, fmt.Errorf("no cmdline found")
+	}
+
+	guestIP, err := extractGuestIPFromCmdline(*config.Payload.Cmdline)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to extract guest IP from cmdline: %w", err)
+	}
+	return (*config.Net)[0].Tap, guestIP, nil
+}
+
 func NewServer(config config.ServerConfig) (*Server, error) {
 	err := os.MkdirAll(config.StateDir, 0755)
 	if err != nil {
@@ -313,6 +380,17 @@ func getTapDeviceName(vmName string) string {
 	return fmt.Sprintf("tap-%s", vmName)
 }
 
+func (s *Server) getVMAtomic(vmName string) *vm {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	vm, exists := s.vms[vmName]
+	if !exists {
+		return nil
+	}
+	return vm
+}
+
 func (s *Server) createVM(
 	ctx context.Context,
 	vmName string,
@@ -322,7 +400,13 @@ func (s *Server) createVM(
 	forRestore bool,
 ) (*vm, error) {
 	cleanup := cleanup.Make(func() {
-		log.WithFields(log.Fields{"vmname": vmName, "action": "cleanup", "api": "createVM"}).Info("clean up done")
+		log.WithFields(
+			log.Fields{
+				"vmname": vmName,
+				"action": "cleanup",
+				"api":    "createVM",
+			},
+		).Info("clean up done")
 	})
 
 	defer func() {
@@ -466,7 +550,11 @@ func (s *Server) createVM(
 		status:        vmStatusRunning,
 	}
 	log.Infof("Successfully created VM: %s", vmName)
+
+	s.lock.Lock()
 	s.vms[vmName] = vm
+	s.lock.Unlock()
+
 	cleanup.Release()
 	return vm, nil
 }
@@ -474,6 +562,9 @@ func (s *Server) createVM(
 func (v *vm) boot(
 	ctx context.Context,
 ) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	resp, err := v.apiClient.DefaultAPI.BootVM(ctx).Execute()
 	if err != nil {
 		return fmt.Errorf("failed to boot VM resp.Body: %v: %w", resp.Body, err)
@@ -490,6 +581,9 @@ func (v *vm) boot(
 func (v *vm) resume(
 	ctx context.Context,
 ) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	resp, err := v.apiClient.DefaultAPI.ResumeVM(ctx).Execute()
 	if err != nil {
 		return fmt.Errorf("failed to resume VM resp.Body: %v: %w", resp.Body, err)
@@ -507,6 +601,9 @@ func (v *vm) restore(
 	ctx context.Context,
 	snapshotPath string,
 ) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	// The snapshot path is a "file://" URL.
 	req := v.apiClient.DefaultAPI.VmRestorePut(ctx)
 	req = req.RestoreConfig(chvapi.RestoreConfig{
@@ -524,7 +621,60 @@ func (v *vm) restore(
 	return nil
 }
 
+func (v *vm) destroy(
+	ctx context.Context,
+) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	logger := log.WithField("vmName", v.name)
+
+	// Shutdown for a graceful exit before full deletion. Don't error out if this fails as we still
+	// want to try a deletion after this.
+	shutdownReq := v.apiClient.DefaultAPI.ShutdownVM(ctx)
+	resp, err := shutdownReq.Execute()
+	if err != nil {
+		logger.Warnf("failed to shutdown VM before deleting: %v", err)
+	} else if resp.StatusCode >= 300 {
+		logger.Warnf("failed to shutdown VM before deleting. bad status: %v", resp)
+	}
+
+	deleteReq := v.apiClient.DefaultAPI.DeleteVM(ctx)
+	resp, err = deleteReq.Execute()
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("failed to delete VM: %v", err))
+	}
+
+	if resp.StatusCode >= 300 {
+		return status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
+	}
+
+	shutdownVMMReq := v.apiClient.DefaultAPI.ShutdownVMM(ctx)
+	resp, err = shutdownVMMReq.Execute()
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM: %v", err))
+	}
+
+	if resp.StatusCode >= 300 {
+		return status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM. bad status: %v", resp))
+	}
+
+	// At this point `v.process` is guaranteed to be non-nil.
+	err = reapProcess(v.process, logger, reapVmTimeout)
+	if err != nil {
+		logger.Warnf("failed to reap VM process: %v", err)
+	}
+
+	// Once deleted remove its directory and remove it from the internal store of VMs.
+	err = os.RemoveAll(v.stateDirPath)
+	if err != nil {
+		log.Warnf("Failed to delete directory %s: %v", v.stateDirPath, err)
+	}
+	return nil
+}
+
 type Server struct {
+	lock        sync.RWMutex
 	vms         map[string]*vm
 	fountain    *fountain.Fountain
 	ipAllocator *ipallocator.IPAllocator
@@ -549,18 +699,12 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		rootfsPath = s.config.RootfsPath
 	}
 
-	vm, exists := s.vms[vmName]
-	if exists {
-		resp, err := vm.apiClient.DefaultAPI.BootVM(ctx).Execute()
+	vm := s.getVMAtomic(vmName)
+	if vm != nil {
+		err := vm.boot(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to boot existing VM resp.Body: %v: %w", resp.Body, err)
+			return nil, status.Errorf(codes.Internal, "failed to boot existing VM: %v", err)
 		}
-
-		if resp.StatusCode != 204 {
-			return nil, fmt.Errorf("failed to boot existing VM. bad status: %v", resp)
-		}
-		// This is set by `createVM` when the VM is new.
-		vm.status = vmStatusRunning
 	} else {
 		cleanup := cleanup.Make(func() {
 			logger.Info("start VM clean up done")
@@ -612,15 +756,15 @@ func (s *Server) StopVM(ctx context.Context, req *serverapi.VMRequest) (*servera
 	logger := log.WithField("vmName", vmName)
 	logger.Infof("received request to stop VM")
 
-	vm, exists := s.vms[vmName]
-	if !exists {
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
 		return nil, status.Errorf(codes.NotFound, "vm %s not found", vmName)
 	}
 
 	shutdown_req := vm.apiClient.DefaultAPI.ShutdownVM(ctx)
 	resp, err := shutdown_req.Execute()
 	if err != nil {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to stop VM: %v", err))
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to stop VM: %v", err))
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 204 {
@@ -635,96 +779,71 @@ func (s *Server) StopVM(ctx context.Context, req *serverapi.VMRequest) (*servera
 }
 
 func (s *Server) destroyVM(ctx context.Context, vmName string) error {
-	log.WithField("vmName", vmName).Info("destroyVM")
 	logger := log.WithField("vmName", vmName)
-
-	vm, exists := s.vms[vmName]
-	if !exists {
-		return status.Errorf(codes.NotFound, "vm %s not found", vmName)
+	logger.Infof("received request to destroy VM")
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
+		return fmt.Errorf("vm %s not found", vmName)
 	}
 
-	// Shutdown for a graceful exit before full deletion. Don't error out if this fails as we still
-	// want to try a deletion after this.
-	shutdownReq := vm.apiClient.DefaultAPI.ShutdownVM(ctx)
-	resp, err := shutdownReq.Execute()
+	err := vm.destroy(ctx)
 	if err != nil {
-		logger.Warnf("failed to shutdown VM before deleting: %v", err)
-	} else if resp.StatusCode >= 300 {
-		logger.Warnf("failed to shutdown VM before deleting. bad status: %v", resp)
-	}
-
-	deleteReq := vm.apiClient.DefaultAPI.DeleteVM(ctx)
-	resp, err = deleteReq.Execute()
-	if err != nil {
-		return status.Error(codes.Internal, fmt.Sprintf("failed to delete VM: %v", err))
-	}
-
-	if resp.StatusCode >= 300 {
-		return status.Error(codes.Internal, fmt.Sprintf("failed to stop VM. bad status: %v", resp))
-	}
-
-	shutdownVMMReq := vm.apiClient.DefaultAPI.ShutdownVMM(ctx)
-	resp, err = shutdownVMMReq.Execute()
-	if err != nil {
-		return status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM: %v", err))
-	}
-
-	if resp.StatusCode >= 300 {
-		return status.Error(codes.Internal, fmt.Sprintf("failed to shutdown VMM. bad status: %v", resp))
-	}
-
-	err = reapProcess(vm.process, logger, reapVmTimeout)
-	if err != nil {
-		logger.Warnf("failed to reap VM process: %v", err)
-	}
-
-	// Once deleted remove its directory and remove it from the internal store of VMs.
-	err = os.RemoveAll(vm.stateDirPath)
-	if err != nil {
-		log.Warnf("Failed to delete directory %s: %v", vm.stateDirPath, err)
+		return fmt.Errorf("failed to destroy vm: %s: %w", vmName, err)
 	}
 
 	err = s.fountain.DestroyTapDevice(vm.tapDevice)
 	if err != nil {
-		log.Warnf("failed to destroy the tap device for vm: %s: %v", vmName, err)
+		return fmt.Errorf("failed to destroy the tap device for vm: %s: %w", vmName, err)
 	}
 
 	err = s.ipAllocator.FreeIP(vm.ip.IP)
 	if err != nil {
-		log.Warnf("failed to free IP: %s: %v", vm.ip.IP.String(), err)
+		return fmt.Errorf("failed to free IP: %s: %w", vm.ip.String(), err)
 	}
+
+	s.lock.Lock()
 	delete(s.vms, vmName)
+	s.lock.Unlock()
 	return nil
 }
 
-func (s *Server) destroyAllVMs(ctx context.Context) error {
-	log.Info("destroying all VMs")
-	var finalErr error
-	for _, vm := range s.vms {
-		err := s.destroyVM(ctx, vm.name)
-		if err != nil {
-			log.Warnf("failed to destroy and clean up vm: %s", vm.name)
-		}
-		finalErr = errors.Join(finalErr, err)
-	}
-	return finalErr
-}
-
 func (s *Server) DestroyVM(ctx context.Context, req *serverapi.VMRequest) (*serverapi.VMResponse, error) {
-	log.Infof("received request to destroy VM")
 	vmName := req.GetVmName()
 	err := s.destroyVM(ctx, vmName)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to destroy vm: %s: %v", vmName, err)
 	}
-	return &serverapi.VMResponse{}, nil
+
+	return &serverapi.VMResponse{
+		Success: serverapi.PtrBool(true),
+	}, nil
 }
 
 func (s *Server) DestroyAllVMs(ctx context.Context) (*serverapi.DestroyAllVMsResponse, error) {
 	log.Infof("received request to destroy all VMs")
-	err := s.destroyAllVMs(ctx)
-	if err != nil {
-		return nil, err
+
+	// `destroyVM` grabs locks inside it. Hence easiest to just capture VM names before. If state is
+	// changed concurrently before destroying then we will return an error as expected. However,
+	// state will never be corrupted.
+	s.lock.RLock()
+	vmNames := make([]string, 0, len(s.vms))
+	for name := range s.vms {
+		vmNames = append(vmNames, name)
+	}
+	s.lock.RUnlock()
+
+	var finalErr error
+	for _, vmName := range vmNames {
+		// Each invocation grabs the same lock on `s`. No point spawning a goroutine for each VM.
+		err := s.destroyVM(ctx, vmName)
+		if err != nil {
+			log.Warnf("failed to destroy and clean up vm: %s", vmName)
+		}
+		finalErr = errors.Join(finalErr, err)
+	}
+
+	if finalErr != nil {
+		return nil, status.Errorf(codes.Internal, "failed to destroy all VMs: %v", finalErr)
 	}
 
 	return &serverapi.DestroyAllVMsResponse{
@@ -735,6 +854,9 @@ func (s *Server) DestroyAllVMs(ctx context.Context) (*serverapi.DestroyAllVMsRes
 func (s *Server) ListAllVMs(ctx context.Context) (*serverapi.ListAllVMsResponse, error) {
 	resp := &serverapi.ListAllVMsResponse{}
 	var vms []serverapi.ListAllVMsResponseVmsInner
+
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
 	for _, vm := range s.vms {
 		var ipString string
@@ -755,8 +877,8 @@ func (s *Server) ListAllVMs(ctx context.Context) (*serverapi.ListAllVMsResponse,
 }
 
 func (s *Server) ListVM(ctx context.Context, vmName string) (*serverapi.ListVMResponse, error) {
-	vm, ok := s.vms[vmName]
-	if !ok {
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
 		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
 	}
 
@@ -779,9 +901,9 @@ func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotReques
 	logger := log.WithField("vmName", vmName)
 	logger.Infof("received request to snapshot VM")
 
-	vm, exists := s.vms[vmName]
-	if !exists {
-		return nil, status.Errorf(codes.NotFound, "vm %s not found", vmName)
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
 	}
 
 	// Create the output directory if it doesn't exist
@@ -914,65 +1036,4 @@ func (s *Server) RestoreVM(ctx context.Context, req *serverapi.VMRestoreRequest)
 	return &serverapi.VMRestoreResponse{
 		Success: serverapi.PtrBool(true),
 	}, nil
-}
-
-type NetworkConfig struct {
-	Tap string `json:"tap"`
-}
-
-type PayloadConfig struct {
-	Firmware  *string `json:"firmware"`
-	Kernel    *string `json:"kernel"`
-	Cmdline   *string `json:"cmdline"`
-	Initramfs *string `json:"initramfs"`
-}
-
-type VMConfig struct {
-	Net     *[]NetworkConfig `json:"net"`
-	Payload PayloadConfig    `json:"payload"`
-}
-
-func extractGuestIPFromCmdline(cmdline string) (*net.IPNet, error) {
-	// Look for guest_ip="<ip>" in the cmdline.
-	re := regexp.MustCompile(`guest_ip="([^"]+)"`)
-	matches := re.FindStringSubmatch(cmdline)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("guest_ip not found in cmdline")
-	}
-
-	// matches[1] contains the IP address with CIDR
-	log.Infof("cmdline: %s", matches[1])
-	ip, ipNet, err := net.ParseCIDR(matches[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse CIDR %q: %w", matches[1], err)
-	}
-	ipNet.IP = ip
-	return ipNet, nil
-}
-
-// Returns the tap device name and the guest IP address from the snapshot config.
-func parseNetworkDataFromSnapshotConfig(configPath string) (string, *net.IPNet, error) {
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	var config VMConfig
-	if err := json.Unmarshal(data, &config); err != nil {
-		return "", nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-
-	if config.Net == nil || len(*config.Net) == 0 {
-		return "", nil, fmt.Errorf("no network configuration found")
-	}
-
-	if config.Payload.Cmdline == nil {
-		return "", nil, fmt.Errorf("no cmdline found")
-	}
-
-	guestIP, err := extractGuestIPFromCmdline(*config.Payload.Cmdline)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to extract guest IP from cmdline: %w", err)
-	}
-	return (*config.Net)[0].Tap, guestIP, nil
 }
