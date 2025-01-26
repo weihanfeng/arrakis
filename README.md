@@ -33,15 +33,22 @@
 
 ## Table of Contents
 
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Build](#build)
+- [chv-starter-pack](#chv-starter-pack)
+  - [Features](#features)
+  - [Table of Contents](#table-of-contents)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Build](#build)
   - [Build a custom rootfs for the guest](#build-a-custom-rootfs-for-the-guest)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Ongoing Work](#ongoing-work)
-- [Contributing](#contributing)
-- [License](#license)
+  - [Configuration](#configuration)
+  - [Usage](#usage)
+  - [Ongoing Work](#ongoing-work)
+  - [Contribution](#contribution)
+    - [How to Contribute](#how-to-contribute)
+      - [Reporting Bugs](#reporting-bugs)
+      - [Suggesting Features](#suggesting-features)
+      - [Pull Requests](#pull-requests)
+  - [License](#license)
 ___
 
 ## Prerequisites
@@ -147,6 +154,9 @@ ___
 - Start a VM named `foo`. It returns metadata about the VM which could be used to interacting with the VM.
   ```bash
   ./out/chv-client start -n foo
+  ```
+  
+  ```bash
   started VM: {"codeServerPort":"","ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}
   ```
 
@@ -160,12 +170,18 @@ ___
 - Inspecting a VM named `foo`.
   ```bash
   ./out/chv-client list -n foo
+  ```
+
+  ```bash
   VM: {"ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}
   ```
 
 - List all the VMs.
   ```bash
   ./out/chv-client list-all
+  ```
+
+  ```bash
   VMs: {"vms":[{"ip":"10.20.1.2/24","status":"RUNNING","tapDeviceName":"tap-foo","vmName":"foo"}]}
   ```
 
@@ -177,6 +193,20 @@ ___
 - Destroy the VM.
   ```bash
   ./out/chv-client destroy -n foo
+  ```
+
+- Snapshotting and Restoring the VM.
+  - We support snapshotting the VM and then using the snapshot to restore the VM. Currently, we restore the VM to use the same IP as the original VM. If you plan to restore the VM on the same host then either stop or destroy the original VM before restoring. In the future this won't be a constraint.
+  ```bash
+  ./out/chv-client snapshot -n foo-original -o foo-snapshot
+  ```
+
+  ```bash
+  ./out/chv-client destroy -n foo-original -o foo-snapshot
+  ```
+
+  ```bash
+  ./out/chv-client restore -n foo-original --snapshot foo-snapshot
   ```
 
 ---
