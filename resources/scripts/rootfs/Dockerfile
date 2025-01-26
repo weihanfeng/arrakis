@@ -69,10 +69,10 @@ COPY out/chv-guestinit /opt/custom_scripts/guestinit
 
 # Optional binary that helps execute code.
 #COPY out/chv-codeserver /opt/custom_scripts/chv-lambda-codeserver
+##############
 
 # Optional binary that helps execute shell commands.
-#COPY out/chv-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
-##############
+COPY out/chv-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
 
 # Make sure the user binaries are executable.
 RUN chmod +x /opt/custom_scripts/*

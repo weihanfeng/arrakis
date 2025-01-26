@@ -20,3 +20,5 @@ hostservices:
 guestservices:
   codeserver:
     port: "4030"
+  cmdserver:
+    port: "4031"

@@ -229,6 +229,17 @@ func startCodeServerInBg(wg *sync.WaitGroup) error {
 	return nil
 }
 
+func startCmdServerInBg(wg *sync.WaitGroup) error {
+	cmd := exec.Command("/opt/custom_scripts/chv-lambda-cmdserver")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := runCommandInBg(cmd, wg)
+	if err != nil {
+		return fmt.Errorf("failed to start cmd server in bg: %w", err)
+	}
+	return nil
+}
+
 func main() {
 	log.Infof("starting guestinit")
 
@@ -314,6 +325,11 @@ func main() {
 	err = startNodeServerInBg(&wg)
 	if err != nil {
 		log.WithError(err).Fatal("failed to start node server")
+	}
+
+	err = startCmdServerInBg(&wg)
+	if err != nil {
+		log.WithError(err).Fatal("failed to start cmd server")
 	}
 
 	log.Info("reaping processes...")

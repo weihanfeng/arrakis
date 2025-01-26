@@ -21,14 +21,35 @@ const (
 	baseDir = "/tmp/server_files"
 )
 
-// RunCmdResponse structure for JSON responses
-type RunCmdResponse struct {
+// fileData represents a single file's content and metadata.
+type fileData struct {
+	Content string `json:"content"`
+	Path    string `json:"path"`
+	Error   string `json:"error,omitempty"`
+}
+
+// filesGetResponse represents multiple files.
+type filesGetResponse struct {
+	Files []fileData `json:"files"`
+}
+
+type filePostData struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+// filesPostRequest represents multiple files.
+type filesPostRequest struct {
+	Files []filePostData `json:"files"`
+}
+
+// runCmdResponse structure for JSON responses
+type runCmdResponse struct {
 	Output string `json:"output,omitempty"`
 	Error  string `json:"error,omitempty"`
 }
 
-// Handler for POST /upload_file
-// Expects JSON body with "src" and "dst"
+// uploadFileHandler handles "/files" POST requests.
 func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.WithField("api", "upload").Error("method not allowed")
@@ -36,10 +57,7 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		FilePathToContent map[string]string `json:"file_path_to_content"`
-	}
-
+	var req filesPostRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		log.WithField("api", "upload").Error("invalid json body")
@@ -47,14 +65,20 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for relativeFilePath, content := range req.FilePathToContent {
-		absoluteFilePath := filepath.Join(baseDir, relativeFilePath)
+	for _, file_data := range req.Files {
+		absoluteFilePath := filepath.Join(baseDir, file_data.Path)
 
 		// Create any necessary parent directories
 		err := os.MkdirAll(filepath.Dir(absoluteFilePath), fs.ModePerm)
 		if err != nil {
-			log.WithField("api", "upload").Errorf("failed to create dir for: %s err: %v", absoluteFilePath, err)
-			http.Error(w, fmt.Sprintf("failed to create dir for: %s err: %v", absoluteFilePath, err), http.StatusInternalServerError)
+			log.WithField("api", "upload").Errorf(
+				"failed to create dir for: %s err: %v",
+				absoluteFilePath,
+				err,
+			)
+			http.Error(w, fmt.Sprintf(
+				"failed to create dir for: %s err: %v", absoluteFilePath, err), http.StatusInternalServerError,
+			)
 			return
 		}
 
@@ -67,7 +91,7 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		defer file.Close()
 
-		_, err = file.WriteString(content)
+		_, err = file.WriteString(file_data.Content)
 		if err != nil {
 			log.WithField("api", "upload").Errorf("failed to write file: %s err: %v", absoluteFilePath, err)
 			http.Error(w, fmt.Sprintf("failed to write file: %s err: %v", absoluteFilePath, err), http.StatusInternalServerError)
@@ -76,40 +100,43 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Handler for GET /download_file
-// Expects "src" as query parameter
+// downloadFileHandler handles "/files" GET requests.
 func downloadFileHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	src := r.URL.Query().Get("src")
-	if src == "" {
-		http.Error(w, "Missing 'src' query parameter", http.StatusBadRequest)
+	// Get files from query parameter, expects comma-separated paths
+	filesParam := r.URL.Query().Get("paths")
+	if filesParam == "" {
+		http.Error(w, "Missing 'paths' query parameter", http.StatusBadRequest)
 		return
 	}
 
-	// Resolve path to prevent path traversal
-	filePath := filepath.Join(baseDir, filepath.Clean(src))
-
-	// Check if file exists and is not a directory
-	fileInfo, err := os.Stat(filePath)
-	if err != nil {
-		http.Error(w, "File does not exist", http.StatusBadRequest)
-		return
-	}
-	if fileInfo.IsDir() {
-		http.Error(w, "Requested file is a directory", http.StatusBadRequest)
-		return
+	filePaths := strings.Split(filesParam, ",")
+	response := filesGetResponse{
+		Files: make([]fileData, 0, len(filePaths)),
 	}
 
-	// Serve the file
-	http.ServeFile(w, r, filePath)
+	for _, filePath := range filePaths {
+		fileResp := fileData{Path: filePath}
+		// Resolve path to prevent path traversal.
+		absolutePath := filepath.Join(baseDir, filepath.Clean(filePath))
+		content, err := os.ReadFile(absolutePath)
+		if err != nil {
+			fileResp.Error = fmt.Sprintf("Failed to read file: %v", err)
+		} else {
+			fileResp.Content = string(content)
+		}
+		response.Files = append(response.Files, fileResp)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
-// Handler for POST /run_command
-// Expects JSON body with "cmd"
+// runCommandHandler handles "/cmd" POST requests.
 func runCommandHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.WithField("api", "run_cmd").Error("method not allowed")
@@ -182,7 +209,7 @@ func runCommandHandler(w http.ResponseWriter, r *http.Request) {
 			"cmd":  cmdName,
 			"args": cmdArgs,
 		}).Errorf("command execution failed output: %s err: %v", string(output), err)
-		resp := RunCmdResponse{
+		resp := runCmdResponse{
 			Error:  err.Error(),
 			Output: string(output),
 		}
@@ -200,43 +227,58 @@ func runCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}).Info("command executed successfully")
 
 	// Respond with the command output
-	resp := RunCmdResponse{
+	resp := runCmdResponse{
 		Output: string(output),
 	}
 	writeJSON(w, resp)
+}
 
+// indexHandler handles "/" GET requests.
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	response := map[string]string{
+		"msg": "Hello from cmdserver",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // Utility function to write JSON response
-func writeJSON(w http.ResponseWriter, resp RunCmdResponse) {
+func writeJSON(w http.ResponseWriter, resp runCmdResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
 func main() {
-	// Ensure base directory exists
+	// Ensure base directory exists.
 	err := os.MkdirAll(baseDir, os.ModePerm)
 	if err != nil {
 		log.Fatalf("Failed to create base directory: %v", err)
 	}
 
-	// Initialize Gorilla Mux router
+	// Initialize Gorilla Mux router.
 	router := mux.NewRouter()
 
-	// Register routes with their respective handlers
-	router.HandleFunc("/upload_file", uploadFileHandler).Methods(http.MethodPost)
-	router.HandleFunc("/download_file", downloadFileHandler).Methods(http.MethodGet)
-	router.HandleFunc("/run_command", runCommandHandler).Methods(http.MethodPost)
+	// Register routes with their respective handlers.
+	router.HandleFunc("/", indexHandler).Methods(http.MethodGet)
+	router.HandleFunc("/files", uploadFileHandler).Methods(http.MethodPost)
+	router.HandleFunc("/files", downloadFileHandler).Methods(http.MethodGet)
+	router.HandleFunc("/cmd", runCommandHandler).Methods(http.MethodPost)
 
-	// Optionally, add logging middleware
+	// Optionally, add logging middleware.
 	router.Use(loggingMiddleware)
 
-	port := "8080"
+	port := "4031"
 	log.Printf("Server is running on port %s...", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
 }
 
-// Optional: Middleware for logging requests
+// Optional: Middleware for logging requests.
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[%s] %s %s", r.RemoteAddr, r.Method, r.URL.Path)
