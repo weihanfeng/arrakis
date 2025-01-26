@@ -125,28 +125,66 @@ func bridgeExists(bridgeName string) (bool, error) {
 	return false, nil
 }
 
-func forwardPortToCodeServerInVM(vmIP string, port string) error {
-	cmd := exec.Command(
-		"iptables",
-		"-t",
-		"nat",
-		"-A",
-		"PREROUTING",
-		"-p",
-		"tcp",
-		"--dport",
-		string(port),
-		"-j",
-		"DNAT",
-		"--to-destination",
-		fmt.Sprintf("%s:%s", vmIP, port),
-	)
+// setupPortForwardsToVM forwards the given port forwards to the VM.
+func setupPortForwardsToVM(vmIP string, ports []config.PortForward) error {
+	for _, portForward := range ports {
+		hostPort, guestPort := portForward.HostPort, portForward.GuestPort
+		cmd := exec.Command(
+			"iptables",
+			"-t",
+			"nat",
+			"-A",
+			"PREROUTING",
+			"-p",
+			"tcp",
+			"--dport",
+			hostPort,
+			"-j",
+			"DNAT",
+			"--to-destination",
+			fmt.Sprintf("%s:%s", vmIP, guestPort),
+		)
 
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("error forwarding port: %w", err)
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("error forwarding port %s->%s: %w", hostPort, guestPort, err)
+		}
 	}
 	return nil
+}
+
+// deletePortForwardsFromVM deletes the given port forwards from the VM. It doesn't exit early if
+// there's an error but does a best effort to delete all the port forwards.
+func deletePortForwardsFromVM(vmIP string, ports []config.PortForward) error {
+	var err error
+	for _, portForward := range ports {
+		hostPort, guestPort := portForward.HostPort, portForward.GuestPort
+		cmd := exec.Command(
+			"iptables",
+			"-t",
+			"nat",
+			"-D",
+			"PREROUTING",
+			"-p",
+			"tcp",
+			"--dport",
+			hostPort,
+			"-j",
+			"DNAT",
+			"--to-destination",
+			fmt.Sprintf("%s:%s", vmIP, guestPort),
+		)
+
+		err = cmd.Run()
+		if err != nil {
+			log.Warnf("error deleting port forward %s->%s: %v", hostPort, guestPort, err)
+			err = errors.Join(
+				err,
+				fmt.Errorf("error forwarding port %s->%s: %w", hostPort, guestPort, err),
+			)
+		}
+	}
+	return err
 }
 
 // setupBridgeAndFirewall sets up a bridge and firewall rules for the given bridge name, IP address, and subnet.
@@ -289,6 +327,18 @@ func reapProcess(process *os.Process, logger *log.Entry, timeout time.Duration) 
 		return fmt.Errorf("failed to kill VM process: %v", err)
 	}
 	return fmt.Errorf("VM process was force killed after timeout")
+}
+
+// convertPortForward converts the port forwards from the config to the API format.
+func convertPortForward(pfs []config.PortForward) []serverapi.StartVMResponsePortForwardsInner {
+	result := make([]serverapi.StartVMResponsePortForwardsInner, 0, len(pfs))
+	for _, pf := range pfs {
+		result = append(result, serverapi.StartVMResponsePortForwardsInner{
+			HostPort:  serverapi.PtrString(pf.HostPort),
+			GuestPort: serverapi.PtrString(pf.GuestPort),
+		})
+	}
+	return result
 }
 
 type NetworkConfig struct {
@@ -495,23 +545,21 @@ func (s *Server) createVM(
 			s.ipAllocator.FreeIP(guestIP.IP)
 		})
 
-		// Optionally, forward port on the host to the codeserver.
-		if s.config.CodeServerPort != "" {
-			err = forwardPortToCodeServerInVM(guestIP.IP.String(), s.config.CodeServerPort)
-			if err != nil {
-				return nil, fmt.Errorf("failed to forward port in the code server: %w", err)
-			}
+		err = setupPortForwardsToVM(guestIP.IP.String(), s.config.PortForwards)
+		if err != nil {
+			deletePortForwardsFromVM(guestIP.IP.String(), s.config.PortForwards)
+			return nil, fmt.Errorf("failed to forward ports to VM: %w", err)
 		}
 		cleanup.Add(func() {
 			log.WithFields(
 				log.Fields{
-					"vmname":          vmName,
-					"action":          "cleanup",
-					"api":             "createVM",
-					"ip":              guestIP.String(),
-					"codeserver_port": s.config.CodeServerPort},
-			).Info("deleting codeserver port forward")
-			s.ipAllocator.FreeIP(guestIP.IP)
+					"vmname": vmName,
+					"action": "cleanup",
+					"api":    "createVM",
+					"ip":     guestIP.String(),
+				},
+			).Info("deleting port forwards")
+			deletePortForwardsFromVM(guestIP.IP.String(), s.config.PortForwards)
 		})
 
 		vmConfig := chvapi.VmConfig{
@@ -743,11 +791,11 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 
 	logger.Infof("VM started")
 	return &serverapi.StartVMResponse{
-		VmName:         serverapi.PtrString(vmName),
-		Ip:             serverapi.PtrString(vm.ip.String()),
-		Status:         serverapi.PtrString(vm.status.String()),
-		TapDeviceName:  serverapi.PtrString(vm.tapDevice),
-		CodeServerPort: serverapi.PtrString(s.config.CodeServerPort),
+		VmName:        serverapi.PtrString(vmName),
+		Ip:            serverapi.PtrString(vm.ip.String()),
+		Status:        serverapi.PtrString(vm.status.String()),
+		TapDeviceName: serverapi.PtrString(vm.tapDevice),
+		PortForwards:  convertPortForward(s.config.PortForwards),
 	}, nil
 }
 

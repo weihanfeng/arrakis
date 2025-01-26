@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -12,17 +13,22 @@ const (
 	codeServerConfigKey = "guestservices.codeserver"
 )
 
+type PortForward struct {
+	HostPort  string `mapstructure:"host_port"`
+	GuestPort string `mapstructure:"guest_port"`
+}
+
 type ServerConfig struct {
-	Host           string `mapstructure:"host"`
-	Port           string `mapstructure:"port"`
-	StateDir       string `mapstructure:"state_dir"`
-	BridgeName     string `mapstructure:"bridge_name"`
-	BridgeIP       string `mapstructure:"bridge_ip"`
-	BridgeSubnet   string `mapstructure:"bridge_subnet"`
-	ChvBinPath     string `mapstructure:"chv_bin"`
-	KernelPath     string `mapstructure:"kernel"`
-	RootfsPath     string `mapstructure:"rootfs"`
-	CodeServerPort string `mapstructure:"code_server_port"`
+	Host         string        `mapstructure:"host"`
+	Port         string        `mapstructure:"port"`
+	StateDir     string        `mapstructure:"state_dir"`
+	BridgeName   string        `mapstructure:"bridge_name"`
+	BridgeIP     string        `mapstructure:"bridge_ip"`
+	BridgeSubnet string        `mapstructure:"bridge_subnet"`
+	ChvBinPath   string        `mapstructure:"chv_bin"`
+	KernelPath   string        `mapstructure:"kernel"`
+	RootfsPath   string        `mapstructure:"rootfs"`
+	PortForwards []PortForward `mapstructure:"port_forwards"`
 }
 
 func (c ServerConfig) String() string {
@@ -35,7 +41,7 @@ BridgeIP: %s
 BridgeSubnet: %s
 KernelPath: %s
 ChvBinPath: %s
-CodeServerPort: %s
+PortForwards: %+v
 }`,
 		c.Host,
 		c.Port,
@@ -45,7 +51,7 @@ CodeServerPort: %s
 		c.BridgeSubnet,
 		c.KernelPath,
 		c.ChvBinPath,
-		c.CodeServerPort,
+		c.PortForwards,
 	)
 }
 
@@ -86,6 +92,12 @@ func GetServerConfig(configFile string) (*ServerConfig, error) {
 	var result ServerConfig
 	if err := restServerConfig.Unmarshal(&result); err != nil {
 		return nil, fmt.Errorf("error unmarshalling config: %v", err)
+	}
+
+	log.Info("XXX1")
+	for _, portForward := range result.PortForwards {
+		log.Info("XXX2")
+		log.Infof("HostPort: %s, GuestPort: %s", portForward.HostPort, portForward.GuestPort)
 	}
 	return &result, nil
 }

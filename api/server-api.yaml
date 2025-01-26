@@ -185,6 +185,15 @@ components:
           type: string
         codeServerPort:
           type: string
+        portForwards:
+          type: array
+          items:
+            type: object
+            properties:
+              hostPort:
+                type: string
+              guestPort:
+                type: string
     VMRequest:
       type: object
       properties:

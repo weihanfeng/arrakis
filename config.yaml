@@ -9,6 +9,11 @@ hostservices:
     chv_bin: "./resources/bin/cloud-hypervisor"
     kernel: "./resources/bin/vmlinux.bin"
     rootfs: "./out/chv-guestrootfs-ext4.img"
+    port_forwards:
+      - host_port: "4030"
+        guest_port: "4030"
+      - host_port: "4031"
+        guest_port: "4031"
   client:
     server_host: "127.0.0.1"
     server_port: "7000"
