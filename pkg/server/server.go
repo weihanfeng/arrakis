@@ -732,6 +732,25 @@ type Server struct {
 func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*serverapi.StartVMResponse, error) {
 	log.Infof("Server config in StartVM: %+v", s.config)
 	vmName := req.GetVmName()
+	if vmName == "" {
+		return nil, fmt.Errorf("vmName is required")
+	}
+
+	if snapshotPath := req.GetSnapshotPath(); snapshotPath != "" {
+		vm, err := s.restoreVM(ctx, vmName, snapshotPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to restore VM from snapshot: %w", err)
+		}
+
+		return &serverapi.StartVMResponse{
+			VmName:        serverapi.PtrString(vmName),
+			Ip:            serverapi.PtrString(vm.ip.String()),
+			Status:        serverapi.PtrString(vm.status.String()),
+			TapDeviceName: serverapi.PtrString(vm.tapDevice),
+			PortForwards:  convertPortForward(s.config.PortForwards),
+		}, nil
+	}
+
 	entryPoint := req.GetEntryPoint()
 	kernelPath := req.GetKernel()
 	rootfsPath := req.GetRootfs()
@@ -1017,9 +1036,11 @@ func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotReques
 	}, nil
 }
 
-func (s *Server) RestoreVM(ctx context.Context, req *serverapi.VMRestoreRequest) (*serverapi.VMRestoreResponse, error) {
-	vmName := req.GetVmName()
-	snapshotPath := req.GetSnapshotPath()
+func (s *Server) restoreVM(
+	ctx context.Context,
+	vmName string,
+	snapshotPath string,
+) (*vm, error) {
 	logger := log.WithFields(log.Fields{
 		"vmName":       vmName,
 		"snapshotPath": snapshotPath,
@@ -1081,7 +1102,5 @@ func (s *Server) RestoreVM(ctx context.Context, req *serverapi.VMRestoreRequest)
 	}
 
 	cleanup.Release()
-	return &serverapi.VMRestoreResponse{
-		Success: serverapi.PtrBool(true),
-	}, nil
+	return vm, nil
 }

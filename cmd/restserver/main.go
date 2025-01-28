@@ -45,28 +45,13 @@ func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (s *restServer) stopVM(w http.ResponseWriter, r *http.Request) {
-	var req serverapi.VMRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	resp, err := s.vmServer.StopVM(r.Context(), &req)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to stop VM: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
 func (s *restServer) destroyVM(w http.ResponseWriter, r *http.Request) {
-	var req serverapi.VMRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
-		return
+	vars := mux.Vars(r)
+	vmName := vars["name"]
+
+	// Create request object with the VM name
+	req := serverapi.VMRequest{
+		VmName: &vmName,
 	}
 
 	resp, err := s.vmServer.DestroyVM(r.Context(), &req)
@@ -115,13 +100,24 @@ func (s *restServer) listVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) snapshotVM(w http.ResponseWriter, r *http.Request) {
-	var req serverapi.VMSnapshotRequest
+	vars := mux.Vars(r)
+	vmName := vars["name"]
+
+	var req struct {
+		OutputFile string `json:"outputFile,omitempty"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	resp, err := s.vmServer.SnapshotVM(r.Context(), &req)
+	// Create the VMSnapshotRequest with the path parameter
+	snapshotReq := serverapi.VMSnapshotRequest{
+		VmName:     vmName,
+		OutputFile: &req.OutputFile,
+	}
+
+	resp, err := s.vmServer.SnapshotVM(r.Context(), &snapshotReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create snapshot: %v", err), http.StatusInternalServerError)
 		return
@@ -131,16 +127,28 @@ func (s *restServer) snapshotVM(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (s *restServer) restoreVM(w http.ResponseWriter, r *http.Request) {
-	var req serverapi.VMRestoreRequest
+func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vmName := vars["name"]
+
+	var req serverapi.VmsNamePatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	resp, err := s.vmServer.RestoreVM(r.Context(), &req)
+	if req.GetStatus() != "stopped" {
+		http.Error(w, "Status must be 'stopped'", http.StatusBadRequest)
+		return
+	}
+
+	vmReq := serverapi.VMRequest{
+		VmName: &vmName,
+	}
+
+	resp, err := s.vmServer.StopVM(r.Context(), &vmReq)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to restore VM: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to stop VM: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -192,14 +200,13 @@ func main() {
 	r := mux.NewRouter()
 
 	// Register routes
-	r.HandleFunc("/vm/start", s.startVM).Methods("POST")
-	r.HandleFunc("/vm/stop", s.stopVM).Methods("POST")
-	r.HandleFunc("/vm/destroy", s.destroyVM).Methods("POST")
-	r.HandleFunc("/vm/destroy-all", s.destroyAllVMs).Methods("POST")
-	r.HandleFunc("/vm/list", s.listAllVMs).Methods("GET")
-	r.HandleFunc("/vm/{name}", s.listVM).Methods("GET")
-	r.HandleFunc("/vm/snapshot", s.snapshotVM).Methods("POST")
-	r.HandleFunc("/vm/restore", s.restoreVM).Methods("POST")
+	r.HandleFunc("/vms", s.startVM).Methods("POST")
+	r.HandleFunc("/vms/{name}", s.updateVMState).Methods("PATCH")
+	r.HandleFunc("/vms/{name}", s.destroyVM).Methods("DELETE")
+	r.HandleFunc("/vms", s.destroyAllVMs).Methods("DELETE")
+	r.HandleFunc("/vms", s.listAllVMs).Methods("GET")
+	r.HandleFunc("/vms/{name}", s.listVM).Methods("GET")
+	r.HandleFunc("/vms/{name}/snapshots", s.snapshotVM).Methods("POST")
 
 	// Start HTTP server
 	srv := &http.Server{

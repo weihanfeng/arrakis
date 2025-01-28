@@ -12,7 +12,18 @@ servers:
       port:
         default: "8080"
 paths:
-  /vm/start:
+  /vms:
+    get:
+      summary: List all VMs
+      responses:
+        '200':
+          description: List of all VMs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListAllVMsResponse'
+        '500':
+          description: Internal server error
     post:
       summary: Start a VM
       requestBody:
@@ -32,48 +43,7 @@ paths:
           description: Invalid request body
         '500':
           description: Internal server error
-  /vm/stop:
-    post:
-      summary: Stop a VM
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VMRequest'
-      responses:
-        '200':
-          description: Successfully stopped VM
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VMResponse'
-        '400':
-          description: Invalid request body
-        '500':
-          description: Internal server error
-  /vm/destroy:
-    post:
-      summary: Destroy a VM
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VMRequest'
-      responses:
-        '200':
-          description: Successfully destroyed VM
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VMResponse'
-        '400':
-          description: Invalid request body
-        '500':
-          description: Internal server error
-  /vm/destroy-all:
-    post:
+    delete:
       summary: Destroy all VMs
       responses:
         '200':
@@ -84,19 +54,7 @@ paths:
                 $ref: '#/components/schemas/DestroyAllVMsResponse'
         '500':
           description: Internal server error
-  /vm/list:
-    get:
-      summary: List all VMs
-      responses:
-        '200':
-          description: List of all VMs
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ListAllVMsResponse'
-        '500':
-          description: Internal server error
-  /vm/{name}:
+  /vms/{name}:
     get:
       summary: Get details of a specific VM
       parameters:
@@ -115,15 +73,79 @@ paths:
                 $ref: '#/components/schemas/ListVMResponse'
         '500':
           description: Internal server error
-  /vm/snapshot:
-    post:
-      summary: Create a snapshot of a VM
+    patch:
+      summary: Update the state of a specific VM
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the VM
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/VMSnapshotRequest'
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [stopped]
+                  description: Action to perform on the VM
+      responses:
+        '200':
+          description: Successfully updated VM state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMResponse'
+        '400':
+          description: Invalid request body
+        '404':
+          description: VM not found
+        '500':
+          description: Internal server error
+    delete:
+      summary: Destroy a specific VM
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the VM to destroy
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully destroyed VM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMResponse'
+        '404':
+          description: VM not found
+        '500':
+          description: Internal server error
+  /vms/{name}/snapshots:
+    post:
+      summary: Create a snapshot of a VM
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the VM to snapshot
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outputFile:
+                  type: string
+                  description: Path where the snapshot should be saved
       responses:
         '200':
           description: Successfully created snapshot
@@ -133,26 +155,8 @@ paths:
                 $ref: '#/components/schemas/VMResponse'
         '400':
           description: Invalid request body
-        '500':
-          description: Internal server error
-  /vm/restore:
-    post:
-      summary: Restore a VM from a snapshot
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VMRestoreRequest'
-      responses:
-        '200':
-          description: Successfully restored VM from snapshot
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VMRestoreResponse'
-        '400':
-          description: Invalid request body
+        '404':
+          description: VM not found
         '500':
           description: Internal server error
 components:
@@ -172,6 +176,9 @@ components:
         entryPoint:
           type: string
           description: Optional entry point to start in the VM upon boot
+        snapshotPath:
+          type: string
+          description: Optional path to restore from a snapshot. If provided, kernel and rootfs are ignored
     StartVMResponse:
       type: object
       properties:
@@ -272,3 +279,4 @@ components:
       properties:
         success:
           type: boolean
+

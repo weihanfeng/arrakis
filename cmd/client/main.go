@@ -21,15 +21,15 @@ var (
 )
 
 func stopVM(vmName string) error {
-	vmRequest := &serverapi.VMRequest{
-		VmName: serverapi.PtrString(vmName),
-	}
+	req := apiClient.DefaultAPI.VmsNamePatch(context.Background(), vmName)
 
-	_, http_resp, err := apiClient.
-		DefaultAPI.
-		VmStopPost(context.Background()).VMRequest(*vmRequest).Execute()
+	req = req.VmsNamePatchRequest(serverapi.VmsNamePatchRequest{
+		Status: serverapi.PtrString("stopped"),
+	})
+
+	_, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(http_resp.Body)
+		body, _ := io.ReadAll(httpResp.Body)
 		return fmt.Errorf("failed to stop VM: error: %s code: %v", string(body), err)
 	}
 
@@ -38,13 +38,9 @@ func stopVM(vmName string) error {
 }
 
 func destroyVM(vmName string) error {
-	vmRequest := &serverapi.VMRequest{
-		VmName: serverapi.PtrString(vmName),
-	}
-
 	_, http_resp, err := apiClient.
 		DefaultAPI.
-		VmDestroyPost(context.Background()).VMRequest(*vmRequest).Execute()
+		VmsNameDelete(context.Background(), vmName).Execute()
 	if err != nil {
 		body, _ := io.ReadAll(http_resp.Body)
 		return fmt.Errorf("failed to destroy VM: error: %s code: %v", string(body), err)
@@ -55,7 +51,7 @@ func destroyVM(vmName string) error {
 }
 
 func destroyAllVMs() error {
-	_, http_resp, err := apiClient.DefaultAPI.VmDestroyAllPost(context.Background()).Execute()
+	_, http_resp, err := apiClient.DefaultAPI.VmsDelete(context.Background()).Execute()
 	if err != nil {
 		body, _ := io.ReadAll(http_resp.Body)
 		return fmt.Errorf("failed to destroy all VMs: error: %s code: %v", string(body), err)
@@ -65,16 +61,31 @@ func destroyAllVMs() error {
 	return nil
 }
 
-func startVM(vmName string, kernel string, rootfs string, entryPoint string) error {
-	startVMRequest := &serverapi.StartVMRequest{
-		VmName:     serverapi.PtrString(vmName),
-		Kernel:     serverapi.PtrString(kernel),
-		Rootfs:     serverapi.PtrString(rootfs),
-		EntryPoint: serverapi.PtrString(entryPoint),
+func startVM(
+	vmName string,
+	kernel string,
+	rootfs string,
+	entryPoint string,
+	snapshotPath string,
+) error {
+	var startVMRequest *serverapi.StartVMRequest
+	if snapshotPath != "" {
+		// If snapshot path is provided, restore the VM from the snapshot,
+		startVMRequest = &serverapi.StartVMRequest{
+			VmName:     serverapi.PtrString(vmName),
+			EntryPoint: serverapi.PtrString(snapshotPath),
+		}
+	} else {
+		startVMRequest = &serverapi.StartVMRequest{
+			VmName:     serverapi.PtrString(vmName),
+			Kernel:     serverapi.PtrString(kernel),
+			Rootfs:     serverapi.PtrString(rootfs),
+			EntryPoint: serverapi.PtrString(entryPoint),
+		}
 	}
 
 	resp, http_resp, err := apiClient.DefaultAPI.
-		VmStartPost(context.Background()).
+		VmsPost(context.Background()).
 		StartVMRequest(*startVMRequest).Execute()
 	if err != nil {
 		body, _ := io.ReadAll(http_resp.Body)
@@ -90,7 +101,7 @@ func startVM(vmName string, kernel string, rootfs string, entryPoint string) err
 }
 
 func listAllVMs() error {
-	resp, http_resp, err := apiClient.DefaultAPI.VmListGet(context.Background()).Execute()
+	resp, http_resp, err := apiClient.DefaultAPI.VmsGet(context.Background()).Execute()
 	if err != nil {
 		body, _ := io.ReadAll(http_resp.Body)
 		return fmt.Errorf("failed to list all VMs: error: %s code: %v", string(body), err)
@@ -135,7 +146,7 @@ func createApiClient(serverAddr string) (*serverapi.APIClient, error) {
 }
 
 func listVM(vmName string) error {
-	resp, _, err := apiClient.DefaultAPI.VmNameGet(context.Background(), vmName).Execute()
+	resp, _, err := apiClient.DefaultAPI.VmsNameGet(context.Background(), vmName).Execute()
 	if err != nil {
 		return fmt.Errorf("failed to list VM: %w", err)
 	}
@@ -160,16 +171,14 @@ func snapshotVM(vmName string, outputDir string) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	vmSnapshotRequest := &serverapi.VMSnapshotRequest{
-		VmName:     vmName,
-		OutputFile: &absPath,
-	}
+	req := apiClient.DefaultAPI.VmsNameSnapshotsPost(context.Background(), vmName)
+	req = req.VmsNameSnapshotsPostRequest(serverapi.VmsNameSnapshotsPostRequest{
+		OutputFile: serverapi.PtrString(absPath),
+	})
 
-	_, http_resp, err := apiClient.DefaultAPI.
-		VmSnapshotPost(context.Background()).
-		VMSnapshotRequest(*vmSnapshotRequest).Execute()
+	_, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(http_resp.Body)
+		body, _ := io.ReadAll(httpResp.Body)
 		return fmt.Errorf("failed to create snapshot: error: %s code: %v", string(body), err)
 	}
 
@@ -178,29 +187,11 @@ func snapshotVM(vmName string, outputDir string) error {
 }
 
 func restoreVM(vmName string, snapshotPath string) error {
-	absPath, err := filepath.Abs(snapshotPath)
+	snapshotAbsPath, err := filepath.Abs(snapshotPath)
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
+		return fmt.Errorf("failed to get absolute path for snapshot: %w", err)
 	}
-
-	vmRestoreRequest := &serverapi.VMRestoreRequest{
-		VmName:       vmName,
-		SnapshotPath: absPath,
-	}
-
-	_, http_resp, err := apiClient.DefaultAPI.
-		VmRestorePost(context.Background()).
-		VMRestoreRequest(*vmRestoreRequest).Execute()
-	if err != nil {
-		if http_resp == nil {
-			return fmt.Errorf("failed to restore VM: error: %w", err)
-		}
-		body, _ := io.ReadAll(http_resp.Body)
-		return fmt.Errorf("failed to restore VM: error: %s code: %w", string(body), err)
-	}
-
-	log.Infof("successfully restored VM %s from snapshot %s", vmName, snapshotPath)
-	return nil
+	return startVM(vmName, "", "", "", snapshotAbsPath)
 }
 
 func main() {
@@ -258,6 +249,11 @@ func main() {
 						Usage:    "Entry point of the VM",
 						Required: false,
 					},
+					&cli.StringFlag{
+						Name:    "snapshot",
+						Aliases: []string{"s"},
+						Usage:   "Path to snapshot directory to restore from",
+					},
 				},
 				Action: func(ctx *cli.Context) error {
 					return startVM(
@@ -265,6 +261,7 @@ func main() {
 						ctx.String("kernel"),
 						ctx.String("rootfs"),
 						ctx.String("entry-point"),
+						ctx.String("snapshot"),
 					)
 				},
 			},
