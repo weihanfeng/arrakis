@@ -21,7 +21,7 @@ const (
 	rootfsTar           = outputDir + "/rootfs.tar"
 	rootfsDir           = outputDir + "/rootfs"
 	mountDir            = outputDir + "/mnt"
-	diskSizeInMB        = 2048
+	diskSizeInMB        = 8192
 )
 
 // runCmd runs `cmdName` with `args`.

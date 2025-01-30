@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -69,7 +71,7 @@ const (
 )
 
 var (
-	initPath = "/usr/bin/tini -- /opt/custom_scripts/guestinit"
+	initPath = "/lib/systemd/systemd"
 )
 
 func String(s string) *string {
@@ -128,6 +130,12 @@ func bridgeExists(bridgeName string) (bool, error) {
 // setupPortForwardsToVM forwards the given port forwards to the VM.
 func setupPortForwardsToVM(vmIP string, ports []config.PortForward) error {
 	for _, portForward := range ports {
+		log.Infof(
+			"Setting up port forward %s -> %s:%s",
+			portForward.HostPort,
+			vmIP,
+			portForward.GuestPort,
+		)
 		hostPort, guestPort := portForward.HostPort, portForward.GuestPort
 		cmd := exec.Command(
 			"iptables",
@@ -153,38 +161,58 @@ func setupPortForwardsToVM(vmIP string, ports []config.PortForward) error {
 	return nil
 }
 
-// deletePortForwardsFromVM deletes the given port forwards from the VM. It doesn't exit early if
-// there's an error but does a best effort to delete all the port forwards.
-func deletePortForwardsFromVM(vmIP string, ports []config.PortForward) error {
-	var err error
-	for _, portForward := range ports {
-		hostPort, guestPort := portForward.HostPort, portForward.GuestPort
+func deleteAllIPTablesRulesForIP(ip string) error {
+	log.Infof("deleting all iptables rules for IP: %s", ip)
+	// First, list all rules in the NAT table PREROUTING chain.
+	cmd := exec.Command("iptables", "-t", "nat", "-L", "PREROUTING", "-n", "--line-numbers")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list iptables rules: %w", err)
+	}
+
+	// Parse the output to find rule numbers that match our IP.
+	lines := strings.Split(string(output), "\n")
+	var ruleNumbers []int
+
+	// Skip the first two lines (headers).
+	for i := 2; i < len(lines); i++ {
+		line := lines[i]
+		if strings.Contains(line, "to:"+ip+":") {
+			log.Infof("deleting rule: %s", line)
+			// Extract the rule number (first field).
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				ruleNum, err := strconv.Atoi(fields[0])
+				if err == nil {
+					ruleNumbers = append(ruleNumbers, ruleNum)
+				}
+			}
+		}
+	}
+
+	// Delete rules in reverse order to minimize the number of rules that need to be deleted.
+	sort.Sort(sort.Reverse(sort.IntSlice(ruleNumbers)))
+
+	var finalErr error
+	for _, ruleNum := range ruleNumbers {
 		cmd := exec.Command(
 			"iptables",
 			"-t",
 			"nat",
 			"-D",
 			"PREROUTING",
-			"-p",
-			"tcp",
-			"--dport",
-			hostPort,
-			"-j",
-			"DNAT",
-			"--to-destination",
-			fmt.Sprintf("%s:%s", vmIP, guestPort),
+			strconv.Itoa(ruleNum),
 		)
 
-		err = cmd.Run()
-		if err != nil {
-			log.Warnf("error deleting port forward %s->%s: %v", hostPort, guestPort, err)
-			err = errors.Join(
-				err,
-				fmt.Errorf("error forwarding port %s->%s: %w", hostPort, guestPort, err),
+		if err := cmd.Run(); err != nil {
+			log.Warnf("error deleting iptables rule %d for IP %s: %v", ruleNum, ip, err)
+			finalErr = errors.Join(
+				finalErr,
+				fmt.Errorf("failed to delete rule %d: %w", ruleNum, err),
 			)
 		}
 	}
-	return err
+	return finalErr
 }
 
 // setupBridgeAndFirewall sets up a bridge and firewall rules for the given bridge name, IP address, and subnet.
@@ -547,7 +575,7 @@ func (s *Server) createVM(
 
 		err = setupPortForwardsToVM(guestIP.IP.String(), s.config.PortForwards)
 		if err != nil {
-			deletePortForwardsFromVM(guestIP.IP.String(), s.config.PortForwards)
+			deleteAllIPTablesRulesForIP(guestIP.IP.String())
 			return nil, fmt.Errorf("failed to forward ports to VM: %w", err)
 		}
 		cleanup.Add(func() {
@@ -559,7 +587,7 @@ func (s *Server) createVM(
 					"ip":     guestIP.String(),
 				},
 			).Info("deleting port forwards")
-			deletePortForwardsFromVM(guestIP.IP.String(), s.config.PortForwards)
+			deleteAllIPTablesRulesForIP(guestIP.IP.String())
 		})
 
 		vmConfig := chvapi.VmConfig{
@@ -711,6 +739,13 @@ func (v *vm) destroy(
 	err = reapProcess(v.process, logger, reapVmTimeout)
 	if err != nil {
 		logger.Warnf("failed to reap VM process: %v", err)
+	}
+
+	// This should be done at the very end in case we need to communicate with the VM during cleanup.
+	log.Infof("Deleting iptables rules for IP: %s", v.ip.String())
+	err = deleteAllIPTablesRulesForIP(v.ip.IP.String())
+	if err != nil {
+		logger.Warnf("failed to delete iptables rules: %v", err)
 	}
 
 	// Once deleted remove its directory and remove it from the internal store of VMs.

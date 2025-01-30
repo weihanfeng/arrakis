@@ -1,0 +1,28 @@
+[Unit]
+Description=CHV Command Server
+After=network.target
+Requires=chv-guestinit.service
+
+[Service]
+Type=forking
+User=elara
+# Set VNC password before starting tigervncserver, so we don't have to enter it manually.
+ExecStartPre=/bin/sh -c 'printf "elara0000\nelara0000\nn\n" | /usr/bin/vncpasswd'
+# Kill any stale data from previous runs.
+ExecStartPre=/usr/bin/vncserver -kill :*
+ExecStart=/usr/bin/vncserver -localhost no -xstartup /usr/bin/startxfce4
+ExecStop=/usr/bin/vncserver -kill :*
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security settings - keeping minimal privileges
+#PrivateTmp=yes
+#NoNewPrivileges=yes
+#ProtectKernelTunables=yes
+#ProtectControlGroups=yes
+#ProtectKernelModules=yes
+
+[Install]
+WantedBy=multi-user.target 

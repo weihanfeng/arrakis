@@ -5,10 +5,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
-	"sync"
-	"syscall"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -16,34 +13,7 @@ import (
 const (
 	ifname = "eth0"
 	ipBin  = "/usr/bin/ip"
-	// Node is already installed on the rootfs. But we do need to add it to the path.
-	paths          = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/bin/versions/node/v22.11.0/bin"
-	bashBin        = "/bin/bash"
-	serverIpEnvVar = "SERVER_IP"
-	tmpfsSize      = "1024M"
-	nodeServerDir  = "/opt/custom_scripts/node_code_server"
-	codeServerPort = "4030"
 )
-
-// runCommandInBg runs `cmd` in a goroutine.
-func runCommandInBg(cmd *exec.Cmd, wg *sync.WaitGroup) error {
-	wg.Add(1)
-	go func() {
-		defer func() {
-			log.Infof("END cmd: %v", cmd)
-			wg.Done()
-		}()
-		log.Infof("START cmd: %v", cmd)
-
-		err := cmd.Run()
-		if err != nil {
-			log.WithError(err).Errorf("failed to run cmd: %v err: %v", cmd, err)
-			return
-		}
-		log.Infof("cmd: %v succeeded", cmd)
-	}()
-	return nil
-}
 
 // parseKeyFromCmdLine parses a key from the kernel command line. Assumes each
 // key:val is present like key="val" in /proc/cmdline.
@@ -95,68 +65,6 @@ func parseNetworkingMetadata() (string, string, error) {
 	return guestCIDR, gatewayIP.String(), nil
 }
 
-// startEntryPointInBg starts the entry point in the background.
-func startEntryPointInBg(entryPoint string, wg *sync.WaitGroup) error {
-	// Parse `entryPoint` by splitting on space.
-	parts := strings.Fields(entryPoint)
-	if len(parts) == 0 {
-		return fmt.Errorf("empty entry point")
-	}
-
-	command := parts[0]
-	args := parts[1:]
-
-	// Create the command.
-	cmd := exec.Command(command, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := runCommandInBg(cmd, wg)
-	if err != nil {
-		return fmt.Errorf("failed to start entry point in bg: %w", err)
-	}
-	log.Infof("Started entry point command: %s", entryPoint)
-	return nil
-}
-
-func startSshServerInBg(wg *sync.WaitGroup) error {
-	// Needed to start sshd.
-	err := os.MkdirAll("/run/sshd", 0755)
-	if err != nil {
-		return fmt.Errorf("error creating /run/sshd: %w", err)
-	}
-
-	cmd := exec.Command("/usr/sbin/sshd")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err = runCommandInBg(cmd, wg)
-	if err != nil {
-		return fmt.Errorf("failed to start sshd: %w", err)
-	}
-	return nil
-}
-
-func mount(source, target, fsType string, flags uintptr, data ...string) error {
-	if _, err := os.Stat(target); os.IsNotExist(err) {
-		err := os.MkdirAll(target, 0755)
-		if err != nil {
-			return fmt.Errorf("error creating: %s: %w", target, err)
-		}
-	}
-
-	d := ""
-	if len(data) > 0 {
-		d = data[0]
-	}
-
-	err := syscall.Mount(source, target, fsType, flags, d)
-	if err != nil {
-		return fmt.Errorf("error mounting %s to %s, error: %w", source, target, err)
-	}
-	return nil
-}
-
 // setupNetworking sets up networking inside the guest.
 func setupNetworking(guestCIDR string, gatewayIP string) error {
 	cmd := exec.Command(ipBin, "l", "set", "lo", "up")
@@ -196,99 +104,16 @@ func setupNetworking(guestCIDR string, gatewayIP string) error {
 	return nil
 }
 
-func remountRootAsReadOnly() error {
-	cmd := exec.Command("mount", "-o", "remount,ro", "/")
-	return cmd.Run()
-}
-
-func startNodeServerInBg(wg *sync.WaitGroup) error {
-	cmd := exec.Command("npm", "run", "dev", "--", "--host", "0.0.0.0")
-	cmd.Dir = nodeServerDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// We need "npm" and other node things in the path.
-	currentPath := os.Getenv("PATH")
-	combinedPath := currentPath + ":" + paths
-	cmd.Env = append(os.Environ(), "PATH="+combinedPath)
-	err := runCommandInBg(cmd, wg)
-	if err != nil {
-		return fmt.Errorf("failed to start node server in bg: %w", err)
-	}
-	return nil
-}
-
-func startCodeServerInBg(wg *sync.WaitGroup) error {
-	cmd := exec.Command("/opt/custom_scripts/chv-lambda-codeserver")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := runCommandInBg(cmd, wg)
-	if err != nil {
-		return fmt.Errorf("failed to start code server in bg: %w", err)
-	}
-	return nil
-}
-
-func startCmdServerInBg(wg *sync.WaitGroup) error {
-	cmd := exec.Command("/opt/custom_scripts/chv-lambda-cmdserver")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := runCommandInBg(cmd, wg)
-	if err != nil {
-		return fmt.Errorf("failed to start cmd server in bg: %w", err)
-	}
-	return nil
-}
-
 func main() {
 	log.Infof("starting guestinit")
-
-	// Setup essential mounts.
-	err := mount("none", "/proc", "proc", 0)
+	err := os.WriteFile("/etc/hostname", []byte("chv-vm"), 0644)
 	if err != nil {
-		log.WithError(err).Fatalf("Error mounting proc")
+		log.WithError(err).Fatal("failed to write hostname")
 	}
-	err = mount("none", "/dev/pts", "devpts", 0)
-	if err != nil {
-		log.WithError(err).Fatalf("Error mounting devpts")
-	}
-	err = mount("none", "/dev/mqueue", "mqueue", 0)
-	if err != nil {
-		log.WithError(err).Fatalf("Error mounting mqueue")
-	}
-	err = mount("none", "/dev/shm", "tmpfs", 0)
-	if err != nil {
-		log.WithError(err).Fatalf("Error mounting shm")
-	}
-	err = mount("none", "/sys", "sysfs", 0)
-	if err != nil {
-		log.WithError(err).Fatalf("Error mounting sysfs")
-	}
-	err = mount("none", "/sys/fs/cgroup", "cgroup", 0)
-	if err != nil {
-		log.WithError(err).Fatalf("Error mounting cgroup")
-	}
-
-	err = os.Setenv("PATH", paths)
-	if err != nil {
-		log.WithError(err).Fatalf("Error setting PATH")
-	}
-	log.Infof("PATH set to: %s", os.Getenv("PATH"))
 
 	guestCIDR, gatewayIP, err := parseNetworkingMetadata()
 	if err != nil {
 		log.WithError(err).Fatal("failed to parse guest networking metadata")
-	}
-
-	guestIP, _, err := net.ParseCIDR(guestCIDR)
-	if err != nil {
-		log.WithError(err).Fatalf("failed to parse guest CIDR: %v", err)
-	}
-
-	// This will be used by custom servers started by the user in this VM.
-	err = os.Setenv(serverIpEnvVar, guestIP.String())
-	if err != nil {
-		log.WithError(err).Fatalf("Error setting SERVER_IP: %s", guestIP.String())
 	}
 
 	// Setup networking.
@@ -297,51 +122,5 @@ func main() {
 		log.WithError(err).Fatal("failed to setup networking")
 	}
 
-	var wg sync.WaitGroup
-	// Start the entry point command optionally specified by the user.
-	entryPoint, err := parseKeyFromCmdLine("entry_point")
-	entryPointSet := false
-	if err == nil && entryPoint != "" {
-		err := startEntryPointInBg(entryPoint, &wg)
-		if err != nil {
-			log.WithError(err).Fatal("failed to start entry point")
-		}
-		entryPointSet = true
-	}
-
-	// Start the ssh server so that the user can log in to the VM for debugging.
-	err = startSshServerInBg(&wg)
-	if err != nil {
-		log.WithError(err).Fatal("failed to start ssh server")
-	}
-
-	// This will expose a REST API to execute Python and TS code.
-	err = startCodeServerInBg(&wg)
-	if err != nil {
-		log.WithError(err).Fatal("failed to start code server")
-	}
-
-	// This is a React project that is used by the code server to render UI components.
-	err = startNodeServerInBg(&wg)
-	if err != nil {
-		log.WithError(err).Fatal("failed to start node server")
-	}
-
-	err = startCmdServerInBg(&wg)
-	if err != nil {
-		log.WithError(err).Fatal("failed to start cmd server")
-	}
-
-	log.Info("reaping processes...")
-	wg.Wait()
-
-	// If no entry point is set we treat this as a long running VM and ensure init doesn't exit.
-	if !entryPointSet {
-		stop := make(chan os.Signal, 1)
-		signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-		log.Info("waiting for signal...")
-		<-stop
-
-	}
 	log.Info("guestinit exiting...")
 }

@@ -14,6 +14,12 @@ hostservices:
         guest_port: "4030"
       - host_port: "4031"
         guest_port: "4031"
+      - host_port: "5901"
+        guest_port: "5901"
+      - host_port: "5902"
+        guest_port: "5902"
+      - host_port: "3389"
+        guest_port: "3389"
   client:
     server_host: "127.0.0.1"
     server_port: "7000"

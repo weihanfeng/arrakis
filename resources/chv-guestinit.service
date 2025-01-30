@@ -1,0 +1,25 @@
+[Unit]
+Description=CHV Guest Initialization Service
+DefaultDependencies=no
+After=local-fs.target
+Before=network.target
+Conflicts=shutdown.target
+RequiresMountsFor=/proc /sys /dev
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/chv-guestinit
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+PrivateTmp=no
+ProtectSystem=no
+ProtectHome=no
+# We need full privileges since this service handles mounts and networking
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN
+
+[Install]
+WantedBy=multi-user.target

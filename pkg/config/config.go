@@ -94,9 +94,7 @@ func GetServerConfig(configFile string) (*ServerConfig, error) {
 		return nil, fmt.Errorf("error unmarshalling config: %v", err)
 	}
 
-	log.Info("XXX1")
 	for _, portForward := range result.PortForwards {
-		log.Info("XXX2")
 		log.Infof("HostPort: %s, GuestPort: %s", portForward.HostPort, portForward.GuestPort)
 	}
 	return &result, nil

@@ -9,12 +9,15 @@ RUN useradd -m $USERNAME && \
     echo "$USERNAME:$PASSWORD" | chpasswd && \
     adduser $USERNAME sudo
 
+# Needed to see journal logs.
+RUN usermod -aG adm elara
+
 # Set timezone.
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Update and install common utilities.
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     init \
     systemd \
     ncat \
@@ -49,30 +52,36 @@ RUN apt-get update && apt-get install -y \
     tini \
     python3-venv \
     python3-pip \
+    xvfb \
+    xfce4 \
+    xfce4-goodies \
+    xrdp \
+    zsh \
+    tigervnc-standalone-server \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Dependencies for executing TS and React code.
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
-RUN . ~/.nvm/nvm.sh && nvm install 22
-ENV PATH=$PATH:/usr/bin/versions/node/v22.11.0/bin
-
-# Create a directory for your custom scripts
-RUN mkdir -p /opt/custom_scripts
+RUN echo "chv-starter-pack-vm" > /etc/hostname
 
 # To support sudo within the guest.
 RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 
 # Add user binaries from the host into the guest rootfs in this section.
 ##############
-COPY out/chv-guestinit /opt/custom_scripts/guestinit
+COPY out/chv-guestinit /usr/local/bin/chv-guestinit
+RUN chmod +x /usr/local/bin/chv-guestinit
+COPY resources/chv-guestinit.service /usr/lib/systemd/system/chv-guestinit.service
+RUN ln -s /usr/lib/systemd/system/chv-guestinit.service /etc/systemd/system/multi-user.target.wants/chv-guestinit.service
+
+COPY out/chv-cmdserver /usr/local/bin/chv-cmdserver
+RUN chmod +x /usr/local/bin/chv-cmdserver
+COPY resources/chv-cmdserver.service /usr/lib/systemd/system/chv-cmdserver.service
+RUN ln -s /usr/lib/systemd/system/chv-cmdserver.service /etc/systemd/system/multi-user.target.wants/chv-cmdserver.service
+
+COPY resources/chv-vncserver.service /usr/lib/systemd/system/chv-vncserver.service
+RUN ln -s /usr/lib/systemd/system/chv-vncserver.service /etc/systemd/system/multi-user.target.wants/chv-vncserver.service
 
 # Optional binary that helps execute code.
 #COPY out/chv-codeserver /opt/custom_scripts/chv-lambda-codeserver
 ##############
 
-# Optional binary that helps execute shell commands.
-COPY out/chv-cmdserver /opt/custom_scripts/chv-lambda-cmdserver
-
-# Make sure the user binaries are executable.
-RUN chmod +x /opt/custom_scripts/*
