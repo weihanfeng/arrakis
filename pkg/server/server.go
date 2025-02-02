@@ -181,7 +181,7 @@ func (s *Server) setupPortForwardsToVM(vmIP string, guestPorts []int32) ([]portF
 	return portForwards, nil
 }
 
-func deleteAllIPTablesRulesForIP(ip string) error {
+func cleanupAllIPTablesRulesForIP(ip string) error {
 	log.Infof("deleting all iptables rules for IP: %s", ip)
 	// First, list all rules in the NAT table PREROUTING chain.
 	cmd := exec.Command("iptables", "-t", "nat", "-L", "PREROUTING", "-n", "--line-numbers")
@@ -267,56 +267,6 @@ func cleanupBridge() error {
 		return fmt.Errorf("failed to delete bridge br0: %v", err)
 	}
 	log.Info("deleted bridge: br0")
-	return nil
-}
-
-func cleanupIPTables() error {
-	// List all PREROUTING rules in NAT table.
-	out, err := exec.Command(
-		"iptables",
-		"-t",
-		"nat",
-		"-L",
-		"PREROUTING",
-		"-n",
-		"--line-numbers",
-	).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to list iptables rules: %v", err)
-	}
-
-	// Parse output to find rules with 10.20.1.* target.
-	lines := strings.Split(string(out), "\n")
-	var ruleNumbers []int
-
-	// Start from len-1 to delete from bottom up to avoid changing rule numbers.
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.Contains(lines[i], "10.20.1.") {
-			// Extract rule number from start of line.
-			fields := strings.Fields(lines[i])
-			if len(fields) > 0 {
-				if num, err := strconv.Atoi(fields[0]); err == nil {
-					ruleNumbers = append(ruleNumbers, num)
-				}
-			}
-		}
-	}
-
-	// Delete matched rules.
-	for _, ruleNum := range ruleNumbers {
-		if err := exec.Command(
-			"iptables",
-			"-t",
-			"nat",
-			"-D",
-			"PREROUTING",
-			strconv.Itoa(ruleNum),
-		).Run(); err != nil {
-			log.Warnf("failed to delete iptables rule %d: %v", ruleNum, err)
-		}
-		log.Infof("deleted iptables rule number: %d", ruleNum)
-	}
-
 	return nil
 }
 
@@ -534,6 +484,31 @@ func parseNetworkDataFromSnapshotConfig(configPath string) (string, *net.IPNet, 
 	return (*config.Net)[0].Tap, guestIP, nil
 }
 
+// getIPPrefix returns the IP prefix from the given CIDR taking into account the mask.
+func getIPPrefix(cidr string) (string, error) {
+	// Parse CIDR
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse CIDR: %w", err)
+	}
+
+	// Get the ones in the mask to determine how many octets to keep
+	ones, _ := ipNet.Mask.Size()
+
+	// Calculate how many complete octets we need
+	completeOctets := ones / 8
+
+	// Split IP into octets
+	octets := strings.Split(ipNet.IP.String(), ".")
+
+	// Take only the number of octets determined by the mask
+	if completeOctets > 0 && completeOctets <= len(octets) {
+		return strings.Join(octets[:completeOctets], "."), nil
+	}
+
+	return "", fmt.Errorf("invalid mask size: %d", ones)
+}
+
 func NewServer(config config.ServerConfig) (*Server, error) {
 	// Cleanup any existing resources.
 	if err := cleanupTapDevices(); err != nil {
@@ -544,18 +519,27 @@ func NewServer(config config.ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("failed to cleanup bridge: %w", err)
 	}
 
-	if err := cleanupIPTables(); err != nil {
+	ipPrefix, err := getIPPrefix(config.BridgeSubnet)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get IP prefix: %w", err)
+	}
+
+	log.Infof("Cleaning up iptables rules for IP prefix: %s", ipPrefix)
+	if err := cleanupAllIPTablesRulesForIP(ipPrefix); err != nil {
 		return nil, fmt.Errorf("failed to cleanup iptables rules: %w", err)
 	}
 
-	err := os.MkdirAll(config.StateDir, 0755)
-	if err != nil {
+	if err := os.MkdirAll(config.StateDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create vm state dir: %v err: %w", config.StateDir, err)
 	}
 
 	ipBackupFile := fmt.Sprintf("/tmp/iptables-backup-%s.rules", time.Now().Format(time.UnixDate))
-	err = setupBridgeAndFirewall(ipBackupFile, config.BridgeName, config.BridgeIP, config.BridgeSubnet)
-	if err != nil {
+	if err := setupBridgeAndFirewall(
+		ipBackupFile,
+		config.BridgeName,
+		config.BridgeIP,
+		config.BridgeSubnet,
+	); err != nil {
 		return nil, fmt.Errorf("failed to setup networking on the host: %w", err)
 	}
 
@@ -703,7 +687,7 @@ func (s *Server) createVM(
 
 		portForwards, err = s.setupPortForwardsToVM(guestIP.IP.String(), s.config.PortForwards)
 		if err != nil {
-			deleteAllIPTablesRulesForIP(guestIP.IP.String())
+			cleanupAllIPTablesRulesForIP(guestIP.IP.String())
 			return nil, fmt.Errorf("failed to forward ports to VM: %w", err)
 		}
 		cleanup.Add(func() {
@@ -715,7 +699,7 @@ func (s *Server) createVM(
 					"ip":     guestIP.String(),
 				},
 			).Info("deleting port forwards")
-			deleteAllIPTablesRulesForIP(guestIP.IP.String())
+			cleanupAllIPTablesRulesForIP(guestIP.IP.String())
 		})
 
 		vmConfig := chvapi.VmConfig{
@@ -872,7 +856,7 @@ func (v *vm) destroy(
 
 	// This should be done at the very end in case we need to communicate with the VM during cleanup.
 	log.Infof("Deleting iptables rules for IP: %s", v.ip.String())
-	err = deleteAllIPTablesRulesForIP(v.ip.IP.String())
+	err = cleanupAllIPTablesRulesForIP(v.ip.IP.String())
 	if err != nil {
 		logger.Warnf("failed to delete iptables rules: %v", err)
 	}
