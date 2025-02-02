@@ -40,9 +40,6 @@ const (
 	vmStatusRunning
 	vmStatusStopped
 	vmStatusPaused
-
-	portAllocatorLowPort  = 3000
-	portAllocatorHighPort = 6000
 )
 
 func (status vmStatus) String() string {
@@ -72,6 +69,9 @@ const (
 	netDeviceQueueSizeBytes = 256
 	netDeviceId             = "_net0"
 	reapVmTimeout           = 20 * time.Second
+
+	portAllocatorLowPort  = 3000
+	portAllocatorHighPort = 6000
 )
 
 var (
@@ -233,6 +233,91 @@ func deleteAllIPTablesRulesForIP(ip string) error {
 		}
 	}
 	return finalErr
+}
+
+func cleanupTapDevices() error {
+	// List all network interfaces.
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return fmt.Errorf("failed to list interfaces: %v", err)
+	}
+
+	for _, iface := range interfaces {
+		// Check if interface name starts with "tap".
+		if strings.HasPrefix(iface.Name, "tap") {
+			if err := exec.Command("ip", "link", "delete", iface.Name).Run(); err != nil {
+				log.Warnf("failed to delete tap device %s: %v", iface.Name, err)
+			}
+			log.Infof("deleted tap device: %s", iface.Name)
+		}
+	}
+	return nil
+}
+
+func cleanupBridge() error {
+	// Check if br0 exists.
+	_, err := exec.Command("ip", "link", "show", "br0").CombinedOutput()
+	if err != nil {
+		// Bridge doesn't exist, nothing to do.
+		return nil
+	}
+
+	// Bridge exists, delete it
+	if err := exec.Command("ip", "link", "delete", "br0").Run(); err != nil {
+		return fmt.Errorf("failed to delete bridge br0: %v", err)
+	}
+	log.Info("deleted bridge: br0")
+	return nil
+}
+
+func cleanupIPTables() error {
+	// List all PREROUTING rules in NAT table.
+	out, err := exec.Command(
+		"iptables",
+		"-t",
+		"nat",
+		"-L",
+		"PREROUTING",
+		"-n",
+		"--line-numbers",
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to list iptables rules: %v", err)
+	}
+
+	// Parse output to find rules with 10.20.1.* target.
+	lines := strings.Split(string(out), "\n")
+	var ruleNumbers []int
+
+	// Start from len-1 to delete from bottom up to avoid changing rule numbers.
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], "10.20.1.") {
+			// Extract rule number from start of line.
+			fields := strings.Fields(lines[i])
+			if len(fields) > 0 {
+				if num, err := strconv.Atoi(fields[0]); err == nil {
+					ruleNumbers = append(ruleNumbers, num)
+				}
+			}
+		}
+	}
+
+	// Delete matched rules.
+	for _, ruleNum := range ruleNumbers {
+		if err := exec.Command(
+			"iptables",
+			"-t",
+			"nat",
+			"-D",
+			"PREROUTING",
+			strconv.Itoa(ruleNum),
+		).Run(); err != nil {
+			log.Warnf("failed to delete iptables rule %d: %v", ruleNum, err)
+		}
+		log.Infof("deleted iptables rule number: %d", ruleNum)
+	}
+
+	return nil
 }
 
 // setupBridgeAndFirewall sets up a bridge and firewall rules for the given bridge name, IP address, and subnet.
@@ -450,6 +535,19 @@ func parseNetworkDataFromSnapshotConfig(configPath string) (string, *net.IPNet, 
 }
 
 func NewServer(config config.ServerConfig) (*Server, error) {
+	// Cleanup any existing resources.
+	if err := cleanupTapDevices(); err != nil {
+		return nil, fmt.Errorf("failed to cleanup tap devices: %w", err)
+	}
+
+	if err := cleanupBridge(); err != nil {
+		return nil, fmt.Errorf("failed to cleanup bridge: %w", err)
+	}
+
+	if err := cleanupIPTables(); err != nil {
+		return nil, fmt.Errorf("failed to cleanup iptables rules: %w", err)
+	}
+
 	err := os.MkdirAll(config.StateDir, 0755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create vm state dir: %v err: %w", config.StateDir, err)
