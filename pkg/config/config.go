@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -13,22 +12,17 @@ const (
 	codeServerConfigKey = "guestservices.codeserver"
 )
 
-type PortForward struct {
-	HostPort  string `mapstructure:"host_port"`
-	GuestPort string `mapstructure:"guest_port"`
-}
-
 type ServerConfig struct {
-	Host         string        `mapstructure:"host"`
-	Port         string        `mapstructure:"port"`
-	StateDir     string        `mapstructure:"state_dir"`
-	BridgeName   string        `mapstructure:"bridge_name"`
-	BridgeIP     string        `mapstructure:"bridge_ip"`
-	BridgeSubnet string        `mapstructure:"bridge_subnet"`
-	ChvBinPath   string        `mapstructure:"chv_bin"`
-	KernelPath   string        `mapstructure:"kernel"`
-	RootfsPath   string        `mapstructure:"rootfs"`
-	PortForwards []PortForward `mapstructure:"port_forwards"`
+	Host         string `mapstructure:"host"`
+	Port         string `mapstructure:"port"`
+	StateDir     string `mapstructure:"state_dir"`
+	BridgeName   string `mapstructure:"bridge_name"`
+	BridgeIP     string `mapstructure:"bridge_ip"`
+	BridgeSubnet string `mapstructure:"bridge_subnet"`
+	ChvBinPath   string `mapstructure:"chv_bin"`
+	KernelPath   string `mapstructure:"kernel"`
+	RootfsPath   string `mapstructure:"rootfs"`
+	PortForwards []int32  `mapstructure:"port_forwards"`
 }
 
 func (c ServerConfig) String() string {
@@ -94,9 +88,6 @@ func GetServerConfig(configFile string) (*ServerConfig, error) {
 		return nil, fmt.Errorf("error unmarshalling config: %v", err)
 	}
 
-	for _, portForward := range result.PortForwards {
-		log.Infof("HostPort: %s, GuestPort: %s", portForward.HostPort, portForward.GuestPort)
-	}
 	return &result, nil
 }
 

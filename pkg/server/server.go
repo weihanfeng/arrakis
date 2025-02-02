@@ -26,6 +26,7 @@ import (
 	"github.com/abshkbh/chv-starter-pack/pkg/config"
 	"github.com/abshkbh/chv-starter-pack/pkg/server/fountain"
 	"github.com/abshkbh/chv-starter-pack/pkg/server/ipallocator"
+	"github.com/abshkbh/chv-starter-pack/pkg/server/portallocator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -39,6 +40,9 @@ const (
 	vmStatusRunning
 	vmStatusStopped
 	vmStatusPaused
+
+	portAllocatorLowPort  = 3000
+	portAllocatorHighPort = 6000
 )
 
 func (status vmStatus) String() string {
@@ -74,6 +78,11 @@ var (
 	initPath = "/lib/systemd/systemd"
 )
 
+type portForward struct {
+	hostPort  int32
+	guestPort int32
+}
+
 func String(s string) *string {
 	return &s
 }
@@ -96,6 +105,7 @@ type vm struct {
 	ip            *net.IPNet
 	tapDevice     string
 	status        vmStatus
+	portForwards  []portForward
 }
 
 func getKernelCmdLine(gatewayIP string, guestIP string, entryPoint string) string {
@@ -128,15 +138,25 @@ func bridgeExists(bridgeName string) (bool, error) {
 }
 
 // setupPortForwardsToVM forwards the given port forwards to the VM.
-func setupPortForwardsToVM(vmIP string, ports []config.PortForward) error {
-	for _, portForward := range ports {
+func (s *Server) setupPortForwardsToVM(vmIP string, guestPorts []int32) ([]portForward, error) {
+	portForwards := make([]portForward, 0, len(guestPorts))
+	for _, guestPort := range guestPorts {
+		hostPort, err := s.portAllocator.AllocatePort()
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate port: %w", err)
+		}
+
+		portForwards = append(portForwards, portForward{
+			hostPort:  hostPort,
+			guestPort: guestPort,
+		})
+
 		log.Infof(
-			"Setting up port forward %s -> %s:%s",
-			portForward.HostPort,
+			"Setting up port forward %d -> %s:%d",
+			hostPort,
 			vmIP,
-			portForward.GuestPort,
+			guestPort,
 		)
-		hostPort, guestPort := portForward.HostPort, portForward.GuestPort
 		cmd := exec.Command(
 			"iptables",
 			"-t",
@@ -146,19 +166,19 @@ func setupPortForwardsToVM(vmIP string, ports []config.PortForward) error {
 			"-p",
 			"tcp",
 			"--dport",
-			hostPort,
+			strconv.Itoa(int(hostPort)),
 			"-j",
 			"DNAT",
 			"--to-destination",
-			fmt.Sprintf("%s:%s", vmIP, guestPort),
+			fmt.Sprintf("%s:%d", vmIP, guestPort),
 		)
 
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
-			return fmt.Errorf("error forwarding port %s->%s: %w", hostPort, guestPort, err)
+			return nil, fmt.Errorf("error forwarding port %d->%s:%d: %w", hostPort, vmIP, guestPort, err)
 		}
 	}
-	return nil
+	return portForwards, nil
 }
 
 func deleteAllIPTablesRulesForIP(ip string) error {
@@ -358,12 +378,12 @@ func reapProcess(process *os.Process, logger *log.Entry, timeout time.Duration) 
 }
 
 // convertPortForward converts the port forwards from the config to the API format.
-func convertPortForward(pfs []config.PortForward) []serverapi.StartVMResponsePortForwardsInner {
+func convertPortForward(pfs []portForward) []serverapi.StartVMResponsePortForwardsInner {
 	result := make([]serverapi.StartVMResponsePortForwardsInner, 0, len(pfs))
 	for _, pf := range pfs {
 		result = append(result, serverapi.StartVMResponsePortForwardsInner{
-			HostPort:  serverapi.PtrString(pf.HostPort),
-			GuestPort: serverapi.PtrString(pf.GuestPort),
+			HostPort:  serverapi.PtrString(strconv.Itoa(int(pf.hostPort))),
+			GuestPort: serverapi.PtrString(strconv.Itoa(int(pf.guestPort))),
 		})
 	}
 	return result
@@ -446,11 +466,20 @@ func NewServer(config config.ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("failed to create ip allocator: %w", err)
 	}
 
+	portAllocator, err := portallocator.NewPortAllocator(
+		portAllocatorLowPort,
+		portAllocatorHighPort,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create port allocator: %w", err)
+	}
+
 	return &Server{
-		vms:         make(map[string]*vm),
-		fountain:    fountain.NewFountain(config.BridgeName),
-		ipAllocator: ipAllocator,
-		config:      config,
+		vms:           make(map[string]*vm),
+		fountain:      fountain.NewFountain(config.BridgeName),
+		ipAllocator:   ipAllocator,
+		portAllocator: portAllocator,
+		config:        config,
 	}, nil
 }
 
@@ -548,6 +577,7 @@ func (s *Server) createVM(
 
 	var guestIP *net.IPNet
 	var tapDevice string
+	var portForwards []portForward
 	// We only need to setup the network and call the chv create VM API if we are not restoring
 	// from a snapshot.
 	if !forRestore {
@@ -573,7 +603,7 @@ func (s *Server) createVM(
 			s.ipAllocator.FreeIP(guestIP.IP)
 		})
 
-		err = setupPortForwardsToVM(guestIP.IP.String(), s.config.PortForwards)
+		portForwards, err = s.setupPortForwardsToVM(guestIP.IP.String(), s.config.PortForwards)
 		if err != nil {
 			deleteAllIPTablesRulesForIP(guestIP.IP.String())
 			return nil, fmt.Errorf("failed to forward ports to VM: %w", err)
@@ -624,6 +654,7 @@ func (s *Server) createVM(
 		ip:            guestIP,
 		tapDevice:     tapDevice,
 		status:        vmStatusRunning,
+		portForwards:  portForwards,
 	}
 	log.Infof("Successfully created VM: %s", vmName)
 
@@ -757,11 +788,12 @@ func (v *vm) destroy(
 }
 
 type Server struct {
-	lock        sync.RWMutex
-	vms         map[string]*vm
-	fountain    *fountain.Fountain
-	ipAllocator *ipallocator.IPAllocator
-	config      config.ServerConfig
+	lock          sync.RWMutex
+	vms           map[string]*vm
+	fountain      *fountain.Fountain
+	ipAllocator   *ipallocator.IPAllocator
+	portAllocator *portallocator.PortAllocator
+	config        config.ServerConfig
 }
 
 func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*serverapi.StartVMResponse, error) {
@@ -782,7 +814,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 			Ip:            serverapi.PtrString(vm.ip.String()),
 			Status:        serverapi.PtrString(vm.status.String()),
 			TapDeviceName: serverapi.PtrString(vm.tapDevice),
-			PortForwards:  convertPortForward(s.config.PortForwards),
+			PortForwards:  convertPortForward(vm.portForwards),
 		}, nil
 	}
 
@@ -849,7 +881,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		Ip:            serverapi.PtrString(vm.ip.String()),
 		Status:        serverapi.PtrString(vm.status.String()),
 		TapDeviceName: serverapi.PtrString(vm.tapDevice),
-		PortForwards:  convertPortForward(s.config.PortForwards),
+		PortForwards:  convertPortForward(vm.portForwards),
 	}, nil
 }
 
