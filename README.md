@@ -66,14 +66,21 @@ ___
 
 ## Installation
 
-- Install the [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) binary and note down the path of the binary. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/cloud-hypervisor`, you may place it there.
-
-- Download the prebuilt guest kernel for the VM from [chv-starter-pack-images](https://github.com/abshkbh/chv-starter-pack-images/blob/main/guest/kernel/vmlinux.bin), note down the path. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/vmlinux.bin`, you may place it there.
-
 - Install Golang dependencies using -
     ```bash
     go mod tidy
     ```
+
+- The easiest way to install prerequisite images is to use the `install-images.py` script.
+    ```bash
+    ./install-images.py
+    ```
+
+- The following images are installed by the script above and can also be installed manually -
+  
+  - Install the [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) binary and note down the path of the binary. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/cloud-hypervisor`, you may place it there.
+
+  - Download the prebuilt guest kernel for the VM from [chv-starter-pack-images](https://github.com/abshkbh/chv-starter-pack-images/blob/main/guest/kernel/vmlinux.bin), note down the path. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/vmlinux.bin`, you may place it there.
 
 ---
 
