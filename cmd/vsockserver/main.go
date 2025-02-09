@@ -8,13 +8,14 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/coreos/go-systemd/daemon"
 	"github.com/mdlayher/vsock"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
 	// Define a base directory to prevent path traversal.
-	baseDir = "/tmp/server_files"
+	baseDir = "/tmp/vsockserver"
 	port    = 4032
 )
 
@@ -91,13 +92,6 @@ func handleConnection(conn *vsock.Conn) {
 }
 
 func main() {
-	// Ensure base directory exists
-	err := os.MkdirAll(baseDir, os.ModePerm)
-	if err != nil {
-		log.Fatalf("Failed to create base directory: %v", err)
-	}
-
-	// Create vsock listener
 	listener, err := vsock.Listen(uint32(port), &vsock.Config{})
 	if err != nil {
 		log.Fatalf("Failed to create vsock listener: %v", err)
@@ -105,8 +99,11 @@ func main() {
 	defer listener.Close()
 
 	log.Printf("VSock server listening on port %d...", port)
+	// Make other services start via systemd since we're ready to debug.
+	if _, err := daemon.SdNotify(false, daemon.SdNotifyReady); err != nil {
+		log.Warnf("Failed to notify systemd of readiness: %v", err)
+	}
 
-	// Accept connections
 	for {
 		conn, err := listener.Accept()
 		if err != nil {

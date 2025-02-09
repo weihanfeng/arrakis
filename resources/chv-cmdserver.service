@@ -1,7 +1,6 @@
 [Unit]
 Description=CHV Command Server
 After=chv-guestinit.service
-Requires=chv-guestinit.service
 
 [Service]
 Type=simple
@@ -10,15 +9,6 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-
-# Security settings - keeping minimal privileges
-PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=yes
-NoNewPrivileges=yes
-ProtectKernelTunables=yes
-ProtectControlGroups=yes
-ProtectKernelModules=yes
 
 [Install]
 WantedBy=multi-user.target

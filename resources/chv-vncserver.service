@@ -1,7 +1,6 @@
 [Unit]
-Description=CHV Command Server
-After=network.target
-Requires=chv-guestinit.service
+Description=CHV VNC Server
+After=chv-guestinit.service
 
 [Service]
 Type=forking
@@ -17,12 +16,5 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Security settings - keeping minimal privileges
-#PrivateTmp=yes
-#NoNewPrivileges=yes
-#ProtectKernelTunables=yes
-#ProtectControlGroups=yes
-#ProtectKernelModules=yes
-
 [Install]
-WantedBy=multi-user.target 
+WantedBy=multi-user.target

@@ -1,12 +1,12 @@
 [Unit]
 Description=CHV Vsock Server
-After=chv-network.target
+# We need to listen on the vsock port.
+After=network-online.target
 
 [Service]
-Type=simple
+Type=notify
 ExecStart=/usr/local/bin/chv-vsockserver
-Restart=on-failure
-RestartSec=5
+Restart=no
 StandardOutput=journal
 StandardError=journal
 

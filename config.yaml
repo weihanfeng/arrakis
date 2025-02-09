@@ -12,6 +12,7 @@ hostservices:
     port_forwards:
       - "4030"
       - "5901"
+    stateful_size_in_mb: "2048"
   client:
     server_host: "127.0.0.1"
     server_port: "7000"

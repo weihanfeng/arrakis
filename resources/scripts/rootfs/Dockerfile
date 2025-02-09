@@ -55,10 +55,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     xvfb \
     xfce4 \
     xfce4-goodies \
-    xrdp \
     zsh \
     tigervnc-standalone-server \
     socat \
+    strace \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -67,8 +67,17 @@ RUN echo "chv-starter-pack-vm" > /etc/hostname
 # To support sudo within the guest.
 RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 
+# TODO: Tighten permissions on this directory after testing.
+RUN mkdir -p /mnt/stateful && chmod 0777 /mnt/stateful
+
+# Set up directory for the vsock server. This is required in case the overlayfs setup fails, we
+# still need the vsockserver to be able to run.
+RUN mkdir -p /tmp/vsockserver && chmod 0644 /tmp/vsockserver
+
 # Add user binaries from the host into the guest rootfs in this section.
 ##############
+RUN ln -s /usr/lib/systemd/system/multi-user.target /etc/systemd/system/default.target
+
 COPY out/chv-guestinit /usr/local/bin/chv-guestinit
 RUN chmod +x /usr/local/bin/chv-guestinit
 COPY resources/chv-guestinit.service /usr/lib/systemd/system/chv-guestinit.service
@@ -87,7 +96,7 @@ RUN chmod +x /usr/local/bin/chv-vsockserver
 COPY resources/chv-vsockserver.service /usr/lib/systemd/system/chv-vsockserver.service
 RUN ln -s /usr/lib/systemd/system/chv-vsockserver.service /etc/systemd/system/multi-user.target.wants/chv-vsockserver.service
 
-# Optional binary that helps execute code.
-#COPY out/chv-codeserver /opt/custom_scripts/chv-lambda-codeserver
+# Prevent the renaming service that will change "eth0" to "ens*". If not done our init service
+# inside the guest has race conditions while configuring the network.
+RUN ln -s /dev/null /etc/systemd/network/99-default.link
 ##############
-

@@ -13,16 +13,17 @@ const (
 )
 
 type ServerConfig struct {
-	Host         string `mapstructure:"host"`
-	Port         string `mapstructure:"port"`
-	StateDir     string `mapstructure:"state_dir"`
-	BridgeName   string `mapstructure:"bridge_name"`
-	BridgeIP     string `mapstructure:"bridge_ip"`
-	BridgeSubnet string `mapstructure:"bridge_subnet"`
-	ChvBinPath   string `mapstructure:"chv_bin"`
-	KernelPath   string `mapstructure:"kernel"`
-	RootfsPath   string `mapstructure:"rootfs"`
-	PortForwards []int32  `mapstructure:"port_forwards"`
+	Host             string  `mapstructure:"host"`
+	Port             string  `mapstructure:"port"`
+	StateDir         string  `mapstructure:"state_dir"`
+	BridgeName       string  `mapstructure:"bridge_name"`
+	BridgeIP         string  `mapstructure:"bridge_ip"`
+	BridgeSubnet     string  `mapstructure:"bridge_subnet"`
+	ChvBinPath       string  `mapstructure:"chv_bin"`
+	KernelPath       string  `mapstructure:"kernel"`
+	RootfsPath       string  `mapstructure:"rootfs"`
+	PortForwards     []int32 `mapstructure:"port_forwards"`
+	StatefulSizeInMB int32   `mapstructure:"stateful_size_in_mb"`
 }
 
 func (c ServerConfig) String() string {

@@ -76,10 +76,12 @@ const (
 
 	cidAllocatorLow  = 3
 	cidAllocatorHigh = 1000 // Or whatever upper limit makes sense
+
+	statefulDiskFilename = "stateful.img"
 )
 
 var (
-	initPath = "/lib/systemd/systemd"
+	initPath = "/sbin/init"
 )
 
 type portForward struct {
@@ -114,8 +116,9 @@ type vm struct {
 	// running inside the VM. A "CONNECT <port>" command sent on this socket
 	// will be forwarded to the vsock server listening on the given port inside
 	// the VM. This is as per the cloud-hypervisor vsock implementation.
-	vsockPath string
-	cid       uint32
+	vsockPath        string
+	cid              uint32
+	statefulDiskPath string
 }
 
 func getKernelCmdLine(gatewayIP string, guestIP string, entryPoint string) string {
@@ -519,6 +522,20 @@ func getIPPrefix(cidr string) (string, error) {
 	return "", fmt.Errorf("invalid mask size: %d", ones)
 }
 
+func createStatefulDisk(path string, sizeInMB int32) error {
+	cmd := exec.Command("dd", "if=/dev/zero", "of="+path, "bs=1M",
+		"count=0", "seek="+strconv.Itoa(int(sizeInMB)))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create stateful disk: %w", err)
+	}
+
+	cmd = exec.Command("mkfs.ext4", path)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to format stateful disk with ext4: %w", err)
+	}
+	return nil
+}
+
 func NewServer(config config.ServerConfig) (*Server, error) {
 	// Cleanup any existing resources.
 	if err := cleanupTapDevices(); err != nil {
@@ -678,6 +695,7 @@ func (s *Server) createVM(
 	var portForwards []portForward
 	var vsockPath string
 	var cid uint32
+	var statefulDiskPath string
 	// We only need to setup the network and call the chv create VM API if we are not restoring
 	// from a snapshot.
 	if !forRestore {
@@ -731,12 +749,26 @@ func (s *Server) createVM(
 			}
 		})
 
+		statefulDiskPath = path.Join(vmStateDir, statefulDiskFilename)
+		err = createStatefulDisk(statefulDiskPath, s.config.StatefulSizeInMB)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create stateful disk: %w", err)
+		}
+		cleanup.Add(func() {
+			if err := os.Remove(statefulDiskPath); err != nil {
+				log.WithError(err).Errorf("failed to remove stateful disk: %s", statefulDiskPath)
+			}
+		})
+
 		vmConfig := chvapi.VmConfig{
 			Payload: chvapi.PayloadConfig{
 				Kernel:  String(kernelPath),
 				Cmdline: String(getKernelCmdLine(s.config.BridgeIP, guestIP.String(), entryPoint)),
 			},
-			Disks:   []chvapi.DiskConfig{{Path: rootfsPath}},
+			Disks: []chvapi.DiskConfig{
+				{Path: rootfsPath, Readonly: Bool(true)},
+				{Path: statefulDiskPath},
+			},
 			Cpus:    &chvapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
 			Memory:  &chvapi.MemoryConfig{Size: memorySizeBytes},
 			Serial:  chvapi.NewConsoleConfig(serialPortMode),
@@ -758,17 +790,18 @@ func (s *Server) createVM(
 	}
 
 	vm := &vm{
-		name:          vmName,
-		stateDirPath:  vmStateDir,
-		apiSocketPath: apiSocketPath,
-		apiClient:     apiClient,
-		process:       cmd.Process,
-		ip:            guestIP,
-		tapDevice:     tapDevice,
-		status:        vmStatusRunning,
-		portForwards:  portForwards,
-		vsockPath:     vsockPath,
-		cid:           cid,
+		name:             vmName,
+		stateDirPath:     vmStateDir,
+		apiSocketPath:    apiSocketPath,
+		apiClient:        apiClient,
+		process:          cmd.Process,
+		ip:               guestIP,
+		tapDevice:        tapDevice,
+		status:           vmStatusRunning,
+		portForwards:     portForwards,
+		vsockPath:        vsockPath,
+		cid:              cid,
+		statefulDiskPath: statefulDiskPath,
 	}
 	log.Infof("Successfully created VM: %s", vmName)
 
