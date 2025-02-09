@@ -9,14 +9,17 @@ GUESTINIT_BIN := ${OUT_DIR}/chv-guestinit
 ROOTFSMAKER_BIN := ${OUT_DIR}/chv-rootfsmaker
 CODESERVER_BIN := ${OUT_DIR}/chv-codeserver
 CMDSERVER_BIN := ${OUT_DIR}/chv-cmdserver
+CMDCLIENT_BIN := ${OUT_DIR}/chv-cmdclient
 GUESTROOTFS_BIN := ${OUT_DIR}/chv-guestrootfs-ext4.img
+VSOCKSERVER_BIN := ${OUT_DIR}/chv-vsockserver
+VSOCKCLIENT_BIN := ${OUT_DIR}/chv-vsockclient
 
-.PHONY: all clean serverapi chvapi restserver client guestinit rootfsmaker codeserver cmdserver guestrootfs guest
+.PHONY: all clean serverapi chvapi restserver client guestinit rootfsmaker codeserver cmdserver guestrootfs guest vsockclient vsockserver
 
 clean:
 	rm -rf ${OUT_DIR}
 
-all: serverapi chvapi restserver client guestinit rootfsmaker codeserver cmdserver guestrootfs guest
+all: serverapi chvapi restserver client guestinit rootfsmaker codeserver cmdserver guestrootfs guest vsockclient vsockserver
 
 serverapi: ${OUT_DIR}/chv-serverapi.stamp
 ${OUT_DIR}/chv-serverapi.stamp: ./api/server-api.yaml
@@ -64,8 +67,16 @@ cmdserver:
 	mkdir -p ${OUT_DIR}
 	CGO_ENABLED=0 go build -o ${CMDSERVER_BIN} ./cmd/cmdserver
 
-guestrootfs: rootfsmaker guestinit
+guestrootfs: rootfsmaker cmdserver vsockserver guestinit
 	mkdir -p ${OUT_DIR}
 	sudo ${OUT_DIR}/chv-rootfsmaker create -o ${GUESTROOTFS_BIN} -d ./resources/scripts/rootfs/Dockerfile
 
 guest: guestinit rootfsmaker codeserver cmdserver guestrootfs
+
+vsockclient:
+	mkdir -p ${OUT_DIR}
+	go build -o ${VSOCKCLIENT_BIN} ./cmd/vsockclient
+
+vsockserver:
+	mkdir -p ${OUT_DIR}
+	CGO_ENABLED=0 go build -o ${VSOCKSERVER_BIN} ./cmd/vsockserver

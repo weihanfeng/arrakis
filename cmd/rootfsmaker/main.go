@@ -66,6 +66,14 @@ func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr er
 			err,
 		)
 	}
+	cleanup.Add(func() {
+		if err := runCmd("rm", "-rf", dstDockerfile); err != nil {
+			log.WithError(err).Errorf(
+				"failed to cleanup docker file: %s",
+				dstDockerfile,
+			)
+		}
+	})
 
 	log.Info("creating output folder")
 	err = runCmd("mkdir", "-p", outputDir)
@@ -74,21 +82,28 @@ func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr er
 	}
 
 	log.Info("building docker image")
-	err = runCmd("docker", "build", "-f", dockerFile, "-t", dockerImageName, ".")
+	err = runCmd("docker", "build", "-f", dstDockerfile, "-t", dockerImageName, ".")
 	if err != nil {
 		return fmt.Errorf("failed to build docker container image: %w", err)
+	}
+	cleanup.Add(func() {
+		if err := runCmd("docker", "rmi", dockerImageName); err != nil {
+			log.WithError(err).Errorf("failed to cleanup docker image: %s", dockerImageName)
+		}
+	})
+
+	// Needed in case the container wasn't cleaned up from previous runs.
+	log.Info("removing stale container")
+	err = runCmd("docker", "rm", "-f", dockerContainerName)
+	if err != nil {
+		log.Info("XXXb")
+		log.WithError(err).Errorf("failed to remove stale container: %s", dockerContainerName)
 	}
 
 	log.Info("creating container")
 	err = runCmd("docker", "create", "--name", dockerContainerName, dockerImageName)
 	if err != nil {
 		return fmt.Errorf("failed to build docker container: %w", err)
-	}
-
-	log.Info("exporting rootfs to tar file")
-	err = runCmd("docker", "export", "--output", rootfsTar, dockerContainerName)
-	if err != nil {
-		return fmt.Errorf("failed to export docker container: %w", err)
 	}
 	cleanup.Add(func() {
 		if err := runCmd("docker", "rm", dockerContainerName); err != nil {
@@ -98,6 +113,12 @@ func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr er
 			)
 		}
 	})
+
+	log.Info("exporting rootfs to tar file")
+	err = runCmd("docker", "export", "--output", rootfsTar, dockerContainerName)
+	if err != nil {
+		return fmt.Errorf("failed to export docker container: %w", err)
+	}
 
 	log.Info("creating img file")
 	err = runCmd(

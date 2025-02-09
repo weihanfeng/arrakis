@@ -24,6 +24,7 @@ import (
 	"github.com/abshkbh/chv-starter-pack/out/gen/chvapi"
 	"github.com/abshkbh/chv-starter-pack/out/gen/serverapi"
 	"github.com/abshkbh/chv-starter-pack/pkg/config"
+	"github.com/abshkbh/chv-starter-pack/pkg/server/cidallocator"
 	"github.com/abshkbh/chv-starter-pack/pkg/server/fountain"
 	"github.com/abshkbh/chv-starter-pack/pkg/server/ipallocator"
 	"github.com/abshkbh/chv-starter-pack/pkg/server/portallocator"
@@ -72,6 +73,9 @@ const (
 
 	portAllocatorLowPort  = 3000
 	portAllocatorHighPort = 6000
+
+	cidAllocatorLow  = 3
+	cidAllocatorHigh = 1000 // Or whatever upper limit makes sense
 )
 
 var (
@@ -106,6 +110,12 @@ type vm struct {
 	tapDevice     string
 	status        vmStatus
 	portForwards  []portForward
+	// This is actually a unix domain socket path that maps to all vsock server
+	// running inside the VM. A "CONNECT <port>" command sent on this socket
+	// will be forwarded to the vsock server listening on the given port inside
+	// the VM. This is as per the cloud-hypervisor vsock implementation.
+	vsockPath string
+	cid       uint32
 }
 
 func getKernelCmdLine(gatewayIP string, guestIP string, entryPoint string) string {
@@ -556,11 +566,17 @@ func NewServer(config config.ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("failed to create port allocator: %w", err)
 	}
 
+	cidAllocator, err := cidallocator.NewCIDAllocator(cidAllocatorLow, cidAllocatorHigh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CID allocator: %w", err)
+	}
+
 	return &Server{
 		vms:           make(map[string]*vm),
 		fountain:      fountain.NewFountain(config.BridgeName),
 		ipAllocator:   ipAllocator,
 		portAllocator: portAllocator,
+		cidAllocator:  cidAllocator,
 		config:        config,
 	}, nil
 }
@@ -660,6 +676,8 @@ func (s *Server) createVM(
 	var guestIP *net.IPNet
 	var tapDevice string
 	var portForwards []portForward
+	var vsockPath string
+	var cid uint32
 	// We only need to setup the network and call the chv create VM API if we are not restoring
 	// from a snapshot.
 	if !forRestore {
@@ -702,6 +720,17 @@ func (s *Server) createVM(
 			cleanupAllIPTablesRulesForIP(guestIP.IP.String())
 		})
 
+		vsockPath = path.Join(vmStateDir, "vsock.sock")
+		cid, err = s.cidAllocator.AllocateCID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate CID: %w", err)
+		}
+		cleanup.Add(func() {
+			if err := s.cidAllocator.FreeCID(cid); err != nil {
+				log.WithError(err).Errorf("failed to free CID: %d", cid)
+			}
+		})
+
 		vmConfig := chvapi.VmConfig{
 			Payload: chvapi.PayloadConfig{
 				Kernel:  String(kernelPath),
@@ -713,6 +742,7 @@ func (s *Server) createVM(
 			Serial:  chvapi.NewConsoleConfig(serialPortMode),
 			Console: chvapi.NewConsoleConfig(consolePortMode),
 			Net:     []chvapi.NetConfig{{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
+			Vsock:   &chvapi.VsockConfig{Cid: int64(cid), Socket: vsockPath},
 		}
 		log.Info("Calling CreateVM")
 		req := apiClient.DefaultAPI.CreateVM(ctx)
@@ -737,6 +767,8 @@ func (s *Server) createVM(
 		tapDevice:     tapDevice,
 		status:        vmStatusRunning,
 		portForwards:  portForwards,
+		vsockPath:     vsockPath,
+		cid:           cid,
 	}
 	log.Infof("Successfully created VM: %s", vmName)
 
@@ -875,6 +907,7 @@ type Server struct {
 	fountain      *fountain.Fountain
 	ipAllocator   *ipallocator.IPAllocator
 	portAllocator *portallocator.PortAllocator
+	cidAllocator  *cidallocator.CIDAllocator
 	config        config.ServerConfig
 }
 
@@ -1015,6 +1048,11 @@ func (s *Server) destroyVM(ctx context.Context, vmName string) error {
 	err = s.ipAllocator.FreeIP(vm.ip.IP)
 	if err != nil {
 		return fmt.Errorf("failed to free IP: %s: %w", vm.ip.String(), err)
+	}
+
+	err = s.cidAllocator.FreeCID(vm.cid)
+	if err != nil {
+		log.WithError(err).Errorf("failed to free CID: %d", vm.cid)
 	}
 
 	s.lock.Lock()

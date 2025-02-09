@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # Avoid prompts from apt.
 ENV DEBIAN_FRONTEND=noninteractive
@@ -58,6 +58,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     xrdp \
     zsh \
     tigervnc-standalone-server \
+    socat \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -80,6 +81,11 @@ RUN ln -s /usr/lib/systemd/system/chv-cmdserver.service /etc/systemd/system/mult
 
 COPY resources/chv-vncserver.service /usr/lib/systemd/system/chv-vncserver.service
 RUN ln -s /usr/lib/systemd/system/chv-vncserver.service /etc/systemd/system/multi-user.target.wants/chv-vncserver.service
+
+COPY out/chv-vsockserver /usr/local/bin/chv-vsockserver
+RUN chmod +x /usr/local/bin/chv-vsockserver
+COPY resources/chv-vsockserver.service /usr/lib/systemd/system/chv-vsockserver.service
+RUN ln -s /usr/lib/systemd/system/chv-vsockserver.service /etc/systemd/system/multi-user.target.wants/chv-vsockserver.service
 
 # Optional binary that helps execute code.
 #COPY out/chv-codeserver /opt/custom_scripts/chv-lambda-codeserver
