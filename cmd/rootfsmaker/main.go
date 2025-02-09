@@ -96,7 +96,6 @@ func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr er
 	log.Info("removing stale container")
 	err = runCmd("docker", "rm", "-f", dockerContainerName)
 	if err != nil {
-		log.Info("XXXb")
 		log.WithError(err).Errorf("failed to remove stale container: %s", dockerContainerName)
 	}
 
