@@ -7,6 +7,9 @@ After=network-online.target
 Type=simple
 ExecStart=/usr/local/bin/chv-guestinit
 ExecStartPost=hostnamectl hostname chv-vm
+# Directly using `echo` didn't work.
+ExecStartPost=/bin/sh -c 'echo "127.0.0.1 chv-vm" >> /etc/hosts'
+ExecStartPost=/bin/sh -c 'echo "127.0.0.1 localhost" >> /etc/hosts'
 Restart=no
 StandardOutput=journal
 StandardError=journal
