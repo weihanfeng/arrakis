@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 
 	log "github.com/sirupsen/logrus"
 
@@ -21,7 +20,9 @@ const (
 	rootfsTar           = outputDir + "/rootfs.tar"
 	rootfsDir           = outputDir + "/rootfs"
 	mountDir            = outputDir + "/mnt"
-	diskSizeInMB        = 8192
+	// We will be using `truncate` to create the image file, this won't really consume all the disk
+	// space.
+	diskSizeInMB = 4096
 )
 
 // runCmd runs `cmdName` with `args`.
@@ -121,12 +122,10 @@ func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr er
 
 	log.Info("creating img file")
 	err = runCmd(
-		"dd",
-		"if=/dev/zero",
-		fmt.Sprintf(
-			"of=%s", outputFile),
-		"bs=1M",
-		fmt.Sprintf("count=%s", strconv.Itoa(diskSizeInMB)),
+		"truncate",
+		"-s",
+		fmt.Sprintf("%dM", diskSizeInMB),
+		outputFile,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create img file: %w", err)
@@ -157,7 +156,20 @@ func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr er
 	cleanup.Add(func() {
 		if err := runCmd("umount", mountDir); err != nil {
 			log.WithError(err).Errorf("failed to umount dir: %s", mountDir)
+			// Only process to `resize2fs` if umount succeeded.
+			return
 		}
+
+		if err := runCmd("e2fsck", "-y", "-f", outputFile); err != nil {
+			log.WithError(err).Errorf("failed to e2fsck image: %s", outputFile)
+			return
+		}
+
+		if err := runCmd("resize2fs", "-M", outputFile); err != nil {
+			log.WithError(err).Errorf("failed to resize2fs image: %s", outputFile)
+			return
+		}
+		log.Info("resize successful")
 	})
 
 	log.Info("extracting rootfs tar to mount dir")
