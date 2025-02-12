@@ -206,10 +206,6 @@ func main() {
 		log.WithError(err).Error("failed to setup overlay")
 	}
 
-	if err := os.WriteFile("/etc/hostname", []byte("chv-vm"), 0644); err != nil {
-		log.WithError(err).Error("failed to write hostname")
-	}
-
 	guestCIDR, gatewayIP, err := parseNetworkingMetadata()
 	if err != nil {
 		log.WithError(err).Error("failed to parse guest networking metadata")

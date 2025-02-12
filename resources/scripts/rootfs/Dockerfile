@@ -62,8 +62,6 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN echo "chv-starter-pack-vm" > /etc/hostname
-
 # To support sudo within the guest.
 RUN chown root:root /usr/bin/sudo && chmod 4755 /usr/bin/sudo
 
