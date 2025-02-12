@@ -194,6 +194,18 @@ func restoreVM(vmName string, snapshotPath string) error {
 	return startVM(vmName, "", "", "", snapshotAbsPath)
 }
 
+func pauseVM(vmName string) error {
+	req := apiClient.DefaultAPI.VmsNamePausePost(context.Background(), vmName)
+	_, httpResp, err := req.Execute()
+	if err != nil {
+		body, _ := io.ReadAll(httpResp.Body)
+		return fmt.Errorf("failed to pause VM: error: %s code: %v", string(body), err)
+	}
+
+	log.Infof("successfully paused VM: %s", vmName)
+	return nil
+}
+
 func main() {
 	app := &cli.App{
 		Name:  "chv-client",
@@ -364,6 +376,21 @@ func main() {
 				},
 				Action: func(ctx *cli.Context) error {
 					return restoreVM(ctx.String("name"), ctx.String("snapshot"))
+				},
+			},
+			{
+				Name:  "pause",
+				Usage: "Pause a running VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM to pause",
+						Required: true,
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					return pauseVM(ctx.String("name"))
 				},
 			},
 		},

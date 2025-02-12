@@ -934,6 +934,25 @@ func (v *vm) destroy(
 	return nil
 }
 
+func (v *vm) pause(
+	ctx context.Context,
+) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	resp, err := v.apiClient.DefaultAPI.PauseVM(ctx).Execute()
+	if err != nil {
+		return fmt.Errorf("failed to pause VM resp.Body: %v: %w", resp.Body, err)
+	}
+	if resp.StatusCode != 204 {
+		return fmt.Errorf("failed to pause VM. bad status: %v", resp)
+	}
+
+	log.Infof("Successfully paused VM: %s", v.name)
+	v.status = vmStatusPaused
+	return nil
+}
+
 type Server struct {
 	lock          sync.RWMutex
 	vms           map[string]*vm
@@ -1323,4 +1342,24 @@ func (s *Server) restoreVM(
 
 	cleanup.Release()
 	return vm, nil
+}
+
+func (s *Server) PauseVM(ctx context.Context, req *serverapi.VMRequest) (*serverapi.VMResponse, error) {
+	vmName := req.GetVmName()
+	logger := log.WithField("vmName", vmName)
+	logger.Infof("received request to pause VM")
+
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
+	}
+
+	err := vm.pause(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to pause VM: %v", err))
+	}
+
+	return &serverapi.VMResponse{
+		Success: serverapi.PtrBool(true),
+	}, nil
 }

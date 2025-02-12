@@ -159,6 +159,27 @@ paths:
           description: VM not found
         '500':
           description: Internal server error
+  /vms/{name}/pause:
+    post:
+      summary: Pause a running VM
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the VM to pause
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully paused VM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMResponse'
+        '404':
+          description: VM not found
+        '500':
+          description: Internal server error
 components:
   schemas:
     StartVMRequest:

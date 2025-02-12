@@ -156,6 +156,25 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func (s *restServer) pauseVM(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vmName := vars["name"]
+
+	// Create request object with the VM name
+	req := serverapi.VMRequest{
+		VmName: &vmName,
+	}
+
+	resp, err := s.vmServer.PauseVM(r.Context(), &req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to pause VM: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 func main() {
 	var serverConfig *config.ServerConfig
 	var configFile string
@@ -207,6 +226,7 @@ func main() {
 	r.HandleFunc("/vms", s.listAllVMs).Methods("GET")
 	r.HandleFunc("/vms/{name}", s.listVM).Methods("GET")
 	r.HandleFunc("/vms/{name}/snapshots", s.snapshotVM).Methods("POST")
+	r.HandleFunc("/vms/{name}/pause", s.pauseVM).Methods("POST")
 
 	// Start HTTP server
 	srv := &http.Server{
