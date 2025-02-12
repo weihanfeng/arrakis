@@ -4,7 +4,9 @@ Description=CHV Guest Initialization Service
 After=network-online.target
 
 [Service]
-Type=simple
+# Using `oneshot` ensures that After= clauses in other services referring to this service mean that
+# the service is finished running.
+Type=oneshot
 ExecStart=/usr/local/bin/chv-guestinit
 ExecStartPost=hostnamectl hostname chv-vm
 # Directly using `echo` didn't work.

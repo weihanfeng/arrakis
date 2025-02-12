@@ -7,8 +7,8 @@ Type=forking
 User=elara
 # Set VNC password before starting tigervncserver, so we don't have to enter it manually.
 ExecStartPre=/bin/sh -c 'printf "elara0000\nelara0000\nn\n" | /usr/bin/vncpasswd'
-# Kill any stale data from previous runs.
-ExecStartPre=/usr/bin/vncserver -kill :*
+# Kill any stale data from previous runs. But don't fail if it doesn't exist.
+ExecStartPre=-/usr/bin/vncserver -kill :*
 ExecStart=/usr/bin/vncserver -localhost no -xstartup /usr/bin/startxfce4
 ExecStop=/usr/bin/vncserver -kill :*
 Restart=on-failure
