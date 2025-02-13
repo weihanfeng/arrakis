@@ -195,7 +195,12 @@ func restoreVM(vmName string, snapshotPath string) error {
 }
 
 func pauseVM(vmName string) error {
-	req := apiClient.DefaultAPI.VmsNamePausePost(context.Background(), vmName)
+	req := apiClient.DefaultAPI.VmsNamePatch(context.Background(), vmName)
+
+	req = req.VmsNamePatchRequest(serverapi.VmsNamePatchRequest{
+		Status: serverapi.PtrString("paused"),
+	})
+
 	_, httpResp, err := req.Execute()
 	if err != nil {
 		body, _ := io.ReadAll(httpResp.Body)

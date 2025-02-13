@@ -137,8 +137,9 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.GetStatus() != "stopped" {
-		http.Error(w, "Status must be 'stopped'", http.StatusBadRequest)
+	status := req.GetStatus()
+	if status != "stopped" && status != "paused" {
+		http.Error(w, "Status must be either 'stopped' or 'paused'", http.StatusBadRequest)
 		return
 	}
 
@@ -146,9 +147,17 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 		VmName: &vmName,
 	}
 
-	resp, err := s.vmServer.StopVM(r.Context(), &vmReq)
+	var resp *serverapi.VMResponse
+	var err error
+
+	if status == "stopped" {
+		resp, err = s.vmServer.StopVM(r.Context(), &vmReq)
+	} else { // status == "paused"
+		resp, err = s.vmServer.PauseVM(r.Context(), &vmReq)
+	}
+
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to stop VM: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to update VM state: %v", err), http.StatusInternalServerError)
 		return
 	}
 
