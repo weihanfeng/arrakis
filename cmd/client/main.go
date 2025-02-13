@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -222,6 +223,91 @@ func resumeVM(vmName string) error {
 	return nil
 }
 
+func uploadFiles(vmName string, fileSpecs []string) error {
+	if len(fileSpecs) == 0 || len(fileSpecs)%2 != 0 {
+		return fmt.Errorf("invalid number of file specifications: must be even")
+	}
+
+	apiFiles := make([]serverapi.VmFileUploadRequestFilesInner, len(fileSpecs)/2)
+	for i := 0; i < len(fileSpecs); i += 2 {
+		sourcePath := fileSpecs[i]
+		destPath := fileSpecs[i+1]
+
+		log.Infof("uploading file from %s to %s", sourcePath, destPath)
+
+		content, err := os.ReadFile(sourcePath)
+		if err != nil {
+			return fmt.Errorf("failed to read file %s: %v", sourcePath, err)
+		}
+
+		apiFiles[i/2] = serverapi.VmFileUploadRequestFilesInner{
+			Path:    destPath,
+			Content: string(content),
+		}
+	}
+
+	req := apiClient.DefaultAPI.VmsNameFilesPost(context.Background(), vmName)
+	req = req.VmFileUploadRequest(serverapi.VmFileUploadRequest{
+		Files: apiFiles,
+	})
+
+	_, httpResp, err := req.Execute()
+	if err != nil {
+		body, _ := io.ReadAll(httpResp.Body)
+		return fmt.Errorf("failed to upload files: error: %s code: %v", string(body), err)
+	}
+
+	log.Infof("successfully uploaded %d files to VM: %s", len(fileSpecs)/2, vmName)
+	return nil
+}
+
+func runCommand(vmName string, cmd string) error {
+	req := apiClient.DefaultAPI.VmsNameCmdPost(context.Background(), vmName)
+	req = req.VmCommandRequest(serverapi.VmCommandRequest{
+		Cmd: cmd,
+	})
+
+	resp, httpResp, err := req.Execute()
+	if err != nil {
+		body, _ := io.ReadAll(httpResp.Body)
+		return fmt.Errorf("failed to run command: error: %s code: %v", string(body), err)
+	}
+
+	if resp.GetError() != "" {
+		return fmt.Errorf("command failed: %s\nOutput: %s", resp.GetError(), resp.GetOutput())
+	}
+
+	fmt.Println(resp.GetOutput())
+	return nil
+}
+
+func downloadFiles(vmName string, paths []string) error {
+	pathsParam := strings.Join(paths, ",")
+	req := apiClient.DefaultAPI.VmsNameFilesGet(context.Background(), vmName)
+	req = req.Paths(pathsParam)
+
+	resp, httpResp, err := req.Execute()
+	if err != nil {
+		body, _ := io.ReadAll(httpResp.Body)
+		return fmt.Errorf("failed to download files: error: %s code: %v", string(body), err)
+	}
+
+	for _, file := range resp.GetFiles() {
+		if file.GetError() != "" {
+			log.Warnf("error downloading %s: %s", file.GetPath(), file.GetError())
+			continue
+		}
+
+		err := os.WriteFile(file.GetPath(), []byte(file.GetContent()), 0644)
+		if err != nil {
+			log.Warnf("failed to write file %s: %v", file.GetPath(), err)
+			continue
+		}
+		log.Infof("downloaded file: %s", file.GetPath())
+	}
+	return nil
+}
+
 func main() {
 	app := &cli.App{
 		Name:  "chv-client",
@@ -422,6 +508,69 @@ func main() {
 				},
 				Action: func(ctx *cli.Context) error {
 					return resumeVM(ctx.String("name"))
+				},
+			},
+			{
+				Name:  "upload",
+				Usage: "Upload files to a VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM",
+						Required: true,
+					},
+					&cli.StringSliceFlag{
+						Name:     "file",
+						Aliases:  []string{"f"},
+						Usage:    "File(s) to upload in format 'source,destination' (can be specified multiple times)",
+						Required: true,
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					return uploadFiles(ctx.String("name"), ctx.StringSlice("file"))
+				},
+			},
+			{
+				Name:  "run",
+				Usage: "Run a command in a VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:     "cmd",
+						Aliases:  []string{"c"},
+						Usage:    "Command to run",
+						Required: true,
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					return runCommand(ctx.String("name"), ctx.String("cmd"))
+				},
+			},
+			{
+				Name:  "download",
+				Usage: "Download files from a VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM",
+						Required: true,
+					},
+					&cli.StringSliceFlag{
+						Name:     "path",
+						Aliases:  []string{"p"},
+						Usage:    "Path(s) to download (can be specified multiple times)",
+						Required: true,
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					return downloadFiles(ctx.String("name"), ctx.StringSlice("path"))
 				},
 			},
 		},

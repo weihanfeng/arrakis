@@ -159,6 +159,92 @@ paths:
           description: VM not found
         '500':
           description: Internal server error
+  /vms/{name}/cmd:
+    post:
+      summary: Execute command in VM
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the VM
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VmCommandRequest'
+      responses:
+        '200':
+          description: Command executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VmCommandResponse'
+        '400':
+          description: Invalid request body
+        '404':
+          description: VM not found
+        '500':
+          description: Internal server error
+  /vms/{name}/files:
+    post:
+      summary: Upload files to VM
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the VM
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VmFileUploadRequest'
+      responses:
+        '200':
+          description: Files uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VmFileUploadResponse'
+        '400':
+          description: Invalid request body
+        '404':
+          description: VM not found
+        '500':
+          description: Internal server error
+    get:
+      summary: Download files from VM
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the VM
+          schema:
+            type: string
+        - name: paths
+          in: query
+          required: true
+          description: Comma-separated list of file paths to download
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Files downloaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VmFileDownloadResponse'
+        '400':
+          description: Missing paths parameter
+        '404':
+          description: VM not found
+        '500':
+          description: Internal server error
 components:
   schemas:
     StartVMRequest:
@@ -279,4 +365,64 @@ components:
       properties:
         success:
           type: boolean
+    VmCommandRequest:
+      type: object
+      required:
+        - cmd
+      properties:
+        cmd:
+          type: string
+          description: Command to execute in the VM
+    VmCommandResponse:
+      type: object
+      properties:
+        output:
+          type: string
+          description: Command output
+        error:
+          type: string
+          description: Error message if command failed
+    VmFileUploadRequest:
+      type: object
+      required:
+        - files
+      properties:
+        files:
+          type: array
+          description: Files to upload to the VM
+          items:
+            type: object
+            required:
+              - path
+              - content
+            properties:
+              path:
+                type: string
+                description: Path where to save the file in the VM
+              content:
+                type: string
+                description: Content of the file
+    VmFileUploadResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message if file upload failed
+    VmFileDownloadResponse:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+                description: Path of the file
+              content:
+                type: string
+                description: Content of the file
+              error:
+                type: string
+                description: Error message if file download failed
 

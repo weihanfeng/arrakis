@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/abshkbh/chv-starter-pack/out/gen/chvapi"
 	"github.com/abshkbh/chv-starter-pack/out/gen/serverapi"
+	"github.com/abshkbh/chv-starter-pack/pkg/cmdserver"
 	"github.com/abshkbh/chv-starter-pack/pkg/config"
 	"github.com/abshkbh/chv-starter-pack/pkg/server/cidallocator"
 	"github.com/abshkbh/chv-starter-pack/pkg/server/fountain"
@@ -1384,4 +1386,147 @@ func (s *Server) ResumeVM(ctx context.Context, req *serverapi.VMRequest) (*serve
 	return &serverapi.VMResponse{
 		Success: serverapi.PtrBool(true),
 	}, nil
+}
+
+func (s *Server) VMCommand(ctx context.Context, vmName string, cmd string) (*serverapi.VmCommandResponse, error) {
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
+	}
+
+	url := fmt.Sprintf("http://%s:4031", vm.ip.IP.String())
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	return vm.handleRun(ctx, client, url, cmd)
+}
+
+func (s *Server) VMFileUpload(ctx context.Context, vmName string, files []serverapi.VmFileUploadRequestFilesInner) (*serverapi.VmFileUploadResponse, error) {
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
+	}
+
+	url := fmt.Sprintf("http://%s:4031", vm.ip.IP.String())
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	reqBody := cmdserver.FilesPostRequest{
+		Files: make([]cmdserver.FilePostData, len(files)),
+	}
+
+	for i, file := range files {
+		reqBody.Files[i] = cmdserver.FilePostData{
+			Path:    file.GetPath(),
+			Content: file.GetContent(),
+		}
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to marshal request: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url+"/files", bytes.NewReader(body))
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to execute request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, status.Errorf(codes.Internal, "request failed with status: %d", resp.StatusCode)
+	}
+
+	return &serverapi.VmFileUploadResponse{}, nil
+}
+
+func (v *vm) handleRun(ctx context.Context, client *http.Client, baseURL string, cmd string) (*serverapi.VmCommandResponse, error) {
+	reqBody := struct {
+		Cmd string `json:"cmd"`
+	}{
+		Cmd: cmd,
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/cmd", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("request failed with status: %d", resp.StatusCode)
+	}
+
+	var cmdResp cmdserver.RunCmdResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cmdResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &serverapi.VmCommandResponse{
+		Output: serverapi.PtrString(cmdResp.Output),
+		Error:  serverapi.PtrString(cmdResp.Error),
+	}, nil
+}
+
+func (s *Server) VMFileDownload(ctx context.Context, vmName string, paths string) (*serverapi.VmFileDownloadResponse, error) {
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
+	}
+
+	url := fmt.Sprintf("http://%s:4031", vm.ip.IP.String())
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url+"/files?paths="+paths, nil)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to create request: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to execute request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, status.Errorf(codes.Internal, "request failed with status: %d", resp.StatusCode)
+	}
+
+	var cmdResp cmdserver.FilesGetResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cmdResp); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to decode response: %v", err)
+	}
+
+	apiResp := &serverapi.VmFileDownloadResponse{
+		Files: make([]serverapi.VmFileDownloadResponseFilesInner, len(cmdResp.Files)),
+	}
+	for i, file := range cmdResp.Files {
+		apiResp.Files[i] = serverapi.VmFileDownloadResponseFilesInner{
+			Path:    serverapi.PtrString(file.Path),
+			Content: serverapi.PtrString(file.Content),
+			Error:   serverapi.PtrString(file.Error),
+		}
+	}
+	return apiResp, nil
 }

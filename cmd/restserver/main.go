@@ -166,6 +166,76 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func (s *restServer) vmCommand(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vmName := vars["name"]
+
+	var req serverapi.VmCommandRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.GetCmd() == "" {
+		http.Error(w, "Command cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := s.vmServer.VMCommand(r.Context(), vmName, req.GetCmd())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to execute command: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *restServer) vmFileUpload(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vmName := vars["name"]
+
+	var req serverapi.VmFileUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if len(req.GetFiles()) == 0 {
+		http.Error(w, "No files provided", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := s.vmServer.VMFileUpload(r.Context(), vmName, req.GetFiles())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to upload files: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *restServer) vmFileDownload(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vmName := vars["name"]
+
+	paths := r.URL.Query().Get("paths")
+	if paths == "" {
+		http.Error(w, "Missing 'paths' query parameter", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := s.vmServer.VMFileDownload(r.Context(), vmName, paths)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to download files: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 func main() {
 	var serverConfig *config.ServerConfig
 	var configFile string
@@ -217,6 +287,9 @@ func main() {
 	r.HandleFunc("/vms", s.listAllVMs).Methods("GET")
 	r.HandleFunc("/vms/{name}", s.listVM).Methods("GET")
 	r.HandleFunc("/vms/{name}/snapshots", s.snapshotVM).Methods("POST")
+	r.HandleFunc("/vms/{name}/cmd", s.vmCommand).Methods("POST")
+	r.HandleFunc("/vms/{name}/files", s.vmFileUpload).Methods("POST")
+	r.HandleFunc("/vms/{name}/files", s.vmFileDownload).Methods("GET")
 
 	// Start HTTP server
 	srv := &http.Server{

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/abshkbh/chv-starter-pack/pkg/cmdserver"
 	"github.com/gorilla/mux"
 	"github.com/mattn/go-shellwords"
 )
@@ -21,79 +21,49 @@ const (
 	baseDir = "/tmp/server_files"
 )
 
-// fileData represents a single file's content and metadata.
-type fileData struct {
-	Content string `json:"content"`
-	Path    string `json:"path"`
-	Error   string `json:"error,omitempty"`
-}
-
-// filesGetResponse represents multiple files.
-type filesGetResponse struct {
-	Files []fileData `json:"files"`
-}
-
-type filePostData struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
-}
-
-// filesPostRequest represents multiple files.
-type filesPostRequest struct {
-	Files []filePostData `json:"files"`
-}
-
-// runCmdResponse structure for JSON responses
-type runCmdResponse struct {
-	Output string `json:"output,omitempty"`
-	Error  string `json:"error,omitempty"`
-}
-
 // uploadFileHandler handles "/files" POST requests.
 func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "upload")
 	if r.Method != http.MethodPost {
-		log.WithField("api", "upload").Error("method not allowed")
+		logger.Error("method not allowed")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req filesPostRequest
+	var req cmdserver.FilesPostRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
-		log.WithField("api", "upload").Error("invalid json body")
+		logger.Error("invalid json body")
 		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 		return
 	}
 
 	for _, file_data := range req.Files {
-		absoluteFilePath := filepath.Join(baseDir, file_data.Path)
-
-		// Create any necessary parent directories
-		err := os.MkdirAll(filepath.Dir(absoluteFilePath), fs.ModePerm)
-		if err != nil {
-			log.WithField("api", "upload").Errorf(
-				"failed to create dir for: %s err: %v",
-				absoluteFilePath,
-				err,
-			)
-			http.Error(w, fmt.Sprintf(
-				"failed to create dir for: %s err: %v", absoluteFilePath, err), http.StatusInternalServerError,
-			)
-			return
+		if file_data.Path == "" {
+			logger.Warn("skipping empty file path")
+			continue
 		}
 
-		// Create the file and write the content
+		logger.Infof("uploading file: %s", file_data.Path)
+		var absoluteFilePath string
+		if filepath.IsAbs(file_data.Path) {
+			absoluteFilePath = file_data.Path
+		} else {
+			absoluteFilePath = filepath.Join(baseDir, file_data.Path)
+		}
+
 		file, err := os.Create(absoluteFilePath)
 		if err != nil {
-			log.WithField("api", "upload").Errorf("failed to create file: %s err: %v", absoluteFilePath, err)
+			logger.Errorf("failed to create file: %s err: %v", absoluteFilePath, err)
 			http.Error(w, fmt.Sprintf("failed to create file: %s err: %v", absoluteFilePath, err), http.StatusInternalServerError)
 			return
 		}
 		defer file.Close()
+		logger.Infof("uploading file: %s", absoluteFilePath)
 
 		_, err = file.WriteString(file_data.Content)
 		if err != nil {
-			log.WithField("api", "upload").Errorf("failed to write file: %s err: %v", absoluteFilePath, err)
+			logger.Errorf("failed to write file: %s err: %v", absoluteFilePath, err)
 			http.Error(w, fmt.Sprintf("failed to write file: %s err: %v", absoluteFilePath, err), http.StatusInternalServerError)
 			return
 		}
@@ -115,12 +85,12 @@ func downloadFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filePaths := strings.Split(filesParam, ",")
-	response := filesGetResponse{
-		Files: make([]fileData, 0, len(filePaths)),
+	response := cmdserver.FilesGetResponse{
+		Files: make([]cmdserver.FileData, 0, len(filePaths)),
 	}
 
 	for _, filePath := range filePaths {
-		fileResp := fileData{Path: filePath}
+		fileResp := cmdserver.FileData{Path: filePath}
 		// Resolve path to prevent path traversal.
 		absolutePath := filepath.Join(baseDir, filepath.Clean(filePath))
 		content, err := os.ReadFile(absolutePath)
@@ -129,6 +99,7 @@ func downloadFileHandler(w http.ResponseWriter, r *http.Request) {
 		} else {
 			fileResp.Content = string(content)
 		}
+		log.WithField("api", "download").Infof("downloading file: %s", absolutePath)
 		response.Files = append(response.Files, fileResp)
 	}
 
@@ -209,7 +180,7 @@ func runCommandHandler(w http.ResponseWriter, r *http.Request) {
 			"cmd":  cmdName,
 			"args": cmdArgs,
 		}).Errorf("command execution failed output: %s err: %v", string(output), err)
-		resp := runCmdResponse{
+		resp := cmdserver.RunCmdResponse{
 			Error:  err.Error(),
 			Output: string(output),
 		}
@@ -227,7 +198,7 @@ func runCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}).Info("command executed successfully")
 
 	// Respond with the command output
-	resp := runCmdResponse{
+	resp := cmdserver.RunCmdResponse{
 		Output: string(output),
 	}
 	writeJSON(w, resp)
@@ -249,7 +220,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Utility function to write JSON response
-func writeJSON(w http.ResponseWriter, resp runCmdResponse) {
+func writeJSON(w http.ResponseWriter, resp cmdserver.RunCmdResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
