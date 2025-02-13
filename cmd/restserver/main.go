@@ -235,7 +235,6 @@ func main() {
 	r.HandleFunc("/vms", s.listAllVMs).Methods("GET")
 	r.HandleFunc("/vms/{name}", s.listVM).Methods("GET")
 	r.HandleFunc("/vms/{name}/snapshots", s.snapshotVM).Methods("POST")
-	r.HandleFunc("/vms/{name}/pause", s.pauseVM).Methods("POST")
 
 	// Start HTTP server
 	srv := &http.Server{
