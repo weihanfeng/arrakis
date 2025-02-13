@@ -196,18 +196,29 @@ func restoreVM(vmName string, snapshotPath string) error {
 
 func pauseVM(vmName string) error {
 	req := apiClient.DefaultAPI.VmsNamePatch(context.Background(), vmName)
-
 	req = req.VmsNamePatchRequest(serverapi.VmsNamePatchRequest{
 		Status: serverapi.PtrString("paused"),
 	})
-
 	_, httpResp, err := req.Execute()
 	if err != nil {
 		body, _ := io.ReadAll(httpResp.Body)
 		return fmt.Errorf("failed to pause VM: error: %s code: %v", string(body), err)
 	}
-
 	log.Infof("successfully paused VM: %s", vmName)
+	return nil
+}
+
+func resumeVM(vmName string) error {
+	req := apiClient.DefaultAPI.VmsNamePatch(context.Background(), vmName)
+	req = req.VmsNamePatchRequest(serverapi.VmsNamePatchRequest{
+		Status: serverapi.PtrString("resume"),
+	})
+	_, httpResp, err := req.Execute()
+	if err != nil {
+		body, _ := io.ReadAll(httpResp.Body)
+		return fmt.Errorf("failed to resume VM: error: %s code: %v", string(body), err)
+	}
+	log.Infof("successfully resumed VM: %s", vmName)
 	return nil
 }
 
@@ -396,6 +407,21 @@ func main() {
 				},
 				Action: func(ctx *cli.Context) error {
 					return pauseVM(ctx.String("name"))
+				},
+			},
+			{
+				Name:  "resume",
+				Usage: "Resume a paused VM",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "name",
+						Aliases:  []string{"n"},
+						Usage:    "Name of the VM to resume",
+						Required: true,
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					return resumeVM(ctx.String("name"))
 				},
 			},
 		},

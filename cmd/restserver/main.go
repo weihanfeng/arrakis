@@ -138,7 +138,7 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := req.GetStatus()
-	if status != "stopped" && status != "paused" {
+	if status != "stopped" && status != "paused" && status != "resume" {
 		http.Error(w, "Status must be either 'stopped' or 'paused'", http.StatusBadRequest)
 		return
 	}
@@ -149,34 +149,16 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 
 	var resp *serverapi.VMResponse
 	var err error
-
 	if status == "stopped" {
 		resp, err = s.vmServer.StopVM(r.Context(), &vmReq)
-	} else { // status == "paused"
+	} else if status == "paused" {
 		resp, err = s.vmServer.PauseVM(r.Context(), &vmReq)
+	} else { // status == "resume"
+		resp, err = s.vmServer.ResumeVM(r.Context(), &vmReq)
 	}
 
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to update VM state: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-func (s *restServer) pauseVM(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	vmName := vars["name"]
-
-	// Create request object with the VM name
-	req := serverapi.VMRequest{
-		VmName: &vmName,
-	}
-
-	resp, err := s.vmServer.PauseVM(r.Context(), &req)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to pause VM: %v", err), http.StatusInternalServerError)
 		return
 	}
 

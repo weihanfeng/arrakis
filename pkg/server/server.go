@@ -1363,3 +1363,25 @@ func (s *Server) PauseVM(ctx context.Context, req *serverapi.VMRequest) (*server
 		Success: serverapi.PtrBool(true),
 	}, nil
 }
+
+func (s *Server) ResumeVM(ctx context.Context, req *serverapi.VMRequest) (*serverapi.VMResponse, error) {
+	vmName := req.GetVmName()
+	logger := log.WithField("vmName", vmName)
+	logger.Infof("received request to resume VM")
+
+	vm := s.getVMAtomic(vmName)
+	if vm == nil {
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
+	}
+
+	// We are only allowed to resume a paused VM. If this isn't the case the underlying VMM API will
+	// return an error we return to the user. Thus, we don't check state here.
+	err := vm.resume(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to resume VM: %v", err))
+	}
+
+	return &serverapi.VMResponse{
+		Success: serverapi.PtrBool(true),
+	}, nil
+}
