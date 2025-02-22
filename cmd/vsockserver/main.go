@@ -92,6 +92,10 @@ func handleConnection(conn *vsock.Conn) {
 }
 
 func main() {
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		log.Fatalf("Failed to create base directory: %v", err)
+	}
+
 	listener, err := vsock.Listen(uint32(port), &vsock.Config{})
 	if err != nil {
 		log.Fatalf("Failed to create vsock listener: %v", err)

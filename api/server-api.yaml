@@ -256,6 +256,9 @@ components:
         kernel:
           type: string
           description: Path of the kernel image to be used
+        initramfs:
+          type: string
+          description: Path of the initramfs image to be used
         rootfs:
           type: string
           description: Path of the rootfs image to be used

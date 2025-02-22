@@ -122,10 +122,11 @@ func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr er
 
 	log.Info("creating img file")
 	err = runCmd(
-		"truncate",
-		"-s",
-		fmt.Sprintf("%dM", diskSizeInMB),
-		outputFile,
+		"dd",
+		"if=/dev/zero",
+		"of="+outputFile,
+		"bs=1M",
+		"count="+fmt.Sprintf("%d", diskSizeInMB),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create img file: %w", err)
@@ -159,17 +160,6 @@ func createRootfsFromDockerfile(dockerFile string, outputFile string) (retErr er
 			// Only process to `resize2fs` if umount succeeded.
 			return
 		}
-
-		if err := runCmd("e2fsck", "-y", "-f", outputFile); err != nil {
-			log.WithError(err).Errorf("failed to e2fsck image: %s", outputFile)
-			return
-		}
-
-		if err := runCmd("resize2fs", "-M", outputFile); err != nil {
-			log.WithError(err).Errorf("failed to resize2fs image: %s", outputFile)
-			return
-		}
-		log.Info("resize successful")
 	})
 
 	log.Info("extracting rootfs tar to mount dir")

@@ -2,3 +2,4 @@ resources/bin/
 out/
 *rules
 .vscode/
+vm-state/

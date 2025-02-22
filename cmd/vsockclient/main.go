@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultPort   = 4032
-	stateDir      = "/run/chv-starter-pack"
+	stateDir      = "./vm-state"
 	vsockFileName = "vsock.sock"
 )
 

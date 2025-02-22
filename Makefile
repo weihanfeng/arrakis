@@ -13,8 +13,9 @@ CMDCLIENT_BIN := ${OUT_DIR}/chv-cmdclient
 GUESTROOTFS_BIN := ${OUT_DIR}/chv-guestrootfs-ext4.img
 VSOCKSERVER_BIN := ${OUT_DIR}/chv-vsockserver
 VSOCKCLIENT_BIN := ${OUT_DIR}/chv-vsockclient
+INITRAMFS_SRC_DIR := initramfs
 
-.PHONY: all clean serverapi chvapi restserver client guestinit rootfsmaker codeserver cmdserver guestrootfs guest vsockclient vsockserver
+.PHONY: all clean serverapi chvapi initramfs restserver client guestinit rootfsmaker codeserver cmdserver guestrootfs guest vsockclient vsockserver
 
 clean:
 	rm -rf ${OUT_DIR}
@@ -67,7 +68,7 @@ cmdserver:
 	mkdir -p ${OUT_DIR}
 	CGO_ENABLED=0 go build -o ${CMDSERVER_BIN} ./cmd/cmdserver
 
-guestrootfs: rootfsmaker cmdserver vsockserver guestinit
+guestrootfs: rootfsmaker initramfs cmdserver vsockserver guestinit
 	mkdir -p ${OUT_DIR}
 	sudo ${OUT_DIR}/chv-rootfsmaker create -o ${GUESTROOTFS_BIN} -d ./resources/scripts/rootfs/Dockerfile
 
@@ -80,3 +81,7 @@ vsockclient:
 vsockserver:
 	mkdir -p ${OUT_DIR}
 	CGO_ENABLED=0 go build -o ${VSOCKSERVER_BIN} ./cmd/vsockserver
+
+initramfs: ${OUT_DIR}/initramfs.stamp
+${OUT_DIR}/initramfs.stamp: ${INITRAMFS_SRC_DIR}/create-initramfs.sh
+	${INITRAMFS_SRC_DIR}/create-initramfs.sh

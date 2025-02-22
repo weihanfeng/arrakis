@@ -50,6 +50,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ca-certificates \
     tzdata \
     tini \
+    python3 \
     python3-venv \
     python3-pip \
     xvfb \

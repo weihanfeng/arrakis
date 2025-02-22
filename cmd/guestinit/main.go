@@ -5,10 +5,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
-
-	"golang.org/x/sys/unix"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -130,82 +127,8 @@ func setupNetworking(guestCIDR string, gatewayIP string) error {
 	return nil
 }
 
-func setupOverlay() error {
-	if err := unix.Mount("/dev/vdb", "/mnt/stateful", "ext4", 0, ""); err != nil {
-		return fmt.Errorf("failed to mount ext4: %w", err)
-	}
-
-	stateful := "/mnt/stateful"
-	if err := unix.Chmod(stateful, 0777); err != nil {
-		return fmt.Errorf("failed to chmod /mnt/stateful: %w", err)
-	}
-
-	// TODO: Set 777 for now.
-	upper := filepath.Join(stateful, "overlay-upper")
-	if err := os.MkdirAll(upper, 0777); err != nil {
-		return fmt.Errorf("failed to create overlay upper directory: %w", err)
-	}
-
-	workdir := filepath.Join(stateful, "overlay-workdir")
-	if err := os.MkdirAll(workdir, 0777); err != nil {
-		return fmt.Errorf("failed to create overlay workdir directory: %w", err)
-	}
-
-	merged := filepath.Join(stateful, "overlay-merged")
-	if err := os.MkdirAll(merged, 0777); err != nil {
-		return fmt.Errorf("failed to create overlay merged directory: %w", err)
-	}
-
-	lower := "/"
-	options := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, workdir)
-	if err := unix.Mount("overlay", merged, "overlay", 0, options); err != nil {
-		return fmt.Errorf("failed to mount overlay: %w", err)
-	}
-
-	// Move special mounts to the merged directory
-	specialMounts := []string{"dev", "run", "proc", "sys"}
-	for _, mount := range specialMounts {
-		source := filepath.Join("/", mount)
-		target := filepath.Join(merged, mount)
-
-		// Perform mount move
-		if err := unix.Mount(source, target, "", unix.MS_MOVE, ""); err != nil {
-			return fmt.Errorf("failed to move mount %s to %s: %w", source, target, err)
-		}
-		log.Infof("Successfully moved %s to %s", source, target)
-	}
-
-	// Create oldroot directory for pivot_root
-	oldroot := filepath.Join(merged, "oldroot")
-	if err := os.MkdirAll(oldroot, 0777); err != nil {
-		return fmt.Errorf("failed to create oldroot directory: %w", err)
-	}
-
-	// Change to the new root directory
-	if err := os.Chdir(merged); err != nil {
-		return fmt.Errorf("failed to change directory to %s: %w", merged, err)
-	}
-
-	// Perform pivot_root
-	if err := unix.PivotRoot(".", "oldroot"); err != nil {
-		return fmt.Errorf("failed to pivot_root: %w", err)
-	}
-	log.Info("Successfully performed pivot_root")
-
-	oldrootPostPivot := filepath.Join("/oldroot", stateful)
-	if err := unix.Unmount(oldrootPostPivot, 0); err != nil {
-		return fmt.Errorf("failed to unmount oldroot: %s: %w", oldrootPostPivot, err)
-	}
-	log.Info("Successfully unmounted oldroot")
-	return nil
-}
-
 func main() {
 	log.Infof("starting guestinit")
-	if err := setupOverlay(); err != nil {
-		log.WithError(err).Error("failed to setup overlay")
-	}
-
 	guestCIDR, gatewayIP, err := parseNetworkingMetadata()
 	if err != nil {
 		log.WithError(err).Error("failed to parse guest networking metadata")

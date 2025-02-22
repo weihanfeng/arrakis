@@ -23,6 +23,7 @@ type ServerConfig struct {
 	KernelPath       string  `mapstructure:"kernel"`
 	RootfsPath       string  `mapstructure:"rootfs"`
 	PortForwards     []int32 `mapstructure:"port_forwards"`
+	InitramfsPath    string  `mapstructure:"initramfs"`
 	StatefulSizeInMB int32   `mapstructure:"stateful_size_in_mb"`
 }
 
@@ -37,6 +38,8 @@ BridgeSubnet: %s
 KernelPath: %s
 ChvBinPath: %s
 PortForwards: %+v
+InitramfsPath: %s
+StatefulSizeInMB: %d
 }`,
 		c.Host,
 		c.Port,
@@ -47,6 +50,8 @@ PortForwards: %+v
 		c.KernelPath,
 		c.ChvBinPath,
 		c.PortForwards,
+		c.InitramfsPath,
+		c.StatefulSizeInMB,
 	)
 }
 

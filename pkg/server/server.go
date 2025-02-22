@@ -61,12 +61,14 @@ func (status vmStatus) String() string {
 }
 
 const (
-	numBootVcpus    = 1
-	memorySizeBytes = 512 * 1024 * 1024
+	numBootVcpus    = 2
+	memorySizeBytes = 2048 * 1024 * 1024
 	// Case sensitive.
 	serialPortMode = "Tty"
 	// Case sensitive.
 	consolePortMode = "Off"
+
+	numBlockDevices = 2
 
 	numNetDeviceQueues      = 2
 	netDeviceQueueSizeBytes = 256
@@ -80,10 +82,6 @@ const (
 	cidAllocatorHigh = 1000 // Or whatever upper limit makes sense
 
 	statefulDiskFilename = "stateful.img"
-)
-
-var (
-	initPath = "/sbin/init"
 )
 
 type portForward struct {
@@ -123,13 +121,11 @@ type vm struct {
 	statefulDiskPath string
 }
 
-func getKernelCmdLine(gatewayIP string, guestIP string, entryPoint string) string {
+func getKernelCmdLine(gatewayIP string, guestIP string) string {
 	return fmt.Sprintf(
-		"console=ttyS0 gateway_ip=\"%s\" guest_ip=\"%s\" root=/dev/vda rw entry_point=\"%s\" init=%s",
+		"console=ttyS0 gateway_ip=\"%s\" guest_ip=\"%s\"",
 		gatewayIP,
 		guestIP,
-		entryPoint,
-		initPath,
 	)
 }
 
@@ -525,15 +521,22 @@ func getIPPrefix(cidr string) (string, error) {
 }
 
 func createStatefulDisk(path string, sizeInMB int32) error {
-	cmd := exec.Command("dd", "if=/dev/zero", "of="+path, "bs=1M",
-		"count=0", "seek="+strconv.Itoa(int(sizeInMB)))
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create stateful disk: %w", err)
+	log.Infof("Creating stateful disk at %s with size %dMB", path, sizeInMB)
+	// A sparse file is created as we want to pack as many sandboxes on a server, by growing as
+	// needed.
+	cmd := exec.Command(
+		"truncate",
+		"-s",
+		fmt.Sprintf("%dM", sizeInMB),
+		path,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create stateful disk: %w out: %s", err, string(out))
 	}
 
 	cmd = exec.Command("mkfs.ext4", path)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to format stateful disk with ext4: %w", err)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to format stateful disk with ext4: %w out: %s", err, string(out))
 	}
 	return nil
 }
@@ -619,8 +622,8 @@ func (s *Server) createVM(
 	ctx context.Context,
 	vmName string,
 	kernelPath string,
+	initramfsPath string,
 	rootfsPath string,
-	entryPoint string,
 	forRestore bool,
 ) (*vm, error) {
 	cleanup := cleanup.Make(func() {
@@ -764,12 +767,13 @@ func (s *Server) createVM(
 
 		vmConfig := chvapi.VmConfig{
 			Payload: chvapi.PayloadConfig{
-				Kernel:  String(kernelPath),
-				Cmdline: String(getKernelCmdLine(s.config.BridgeIP, guestIP.String(), entryPoint)),
+				Kernel:    String(kernelPath),
+				Cmdline:   String(getKernelCmdLine(s.config.BridgeIP, guestIP.String())),
+				Initramfs: String(initramfsPath),
 			},
 			Disks: []chvapi.DiskConfig{
-				{Path: rootfsPath, Readonly: Bool(true)},
-				{Path: statefulDiskPath},
+				{Path: rootfsPath, Readonly: Bool(true), NumQueues: Int32(numBlockDevices)},
+				{Path: statefulDiskPath, NumQueues: Int32(numBlockDevices)},
 			},
 			Cpus:    &chvapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
 			Memory:  &chvapi.MemoryConfig{Size: memorySizeBytes},
@@ -987,9 +991,9 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		}, nil
 	}
 
-	entryPoint := req.GetEntryPoint()
 	kernelPath := req.GetKernel()
 	rootfsPath := req.GetRootfs()
+	initramfsPath := req.GetInitramfs()
 	logger := log.WithField("vmName", vmName)
 	logger.Infof("received request to start VM")
 
@@ -1000,6 +1004,10 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 
 	if rootfsPath == "" {
 		rootfsPath = s.config.RootfsPath
+	}
+
+	if initramfsPath == "" {
+		initramfsPath = s.config.InitramfsPath
 	}
 
 	vm := s.getVMAtomic(vmName)
@@ -1018,7 +1026,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		}()
 
 		var err error
-		vm, err = s.createVM(ctx, vmName, kernelPath, rootfsPath, entryPoint, false)
+		vm, err = s.createVM(ctx, vmName, kernelPath, initramfsPath, rootfsPath, false)
 		if err != nil {
 			logger.Errorf("failed to create VM: %v", err)
 			return nil, err
