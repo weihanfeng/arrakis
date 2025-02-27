@@ -14,6 +14,7 @@ hostservices:
       - "4030"
       - "5901"
     stateful_size_in_mb: "8192"
+    guest_mem_percentage: "30"
   client:
     server_host: "127.0.0.1"
     server_port: "7000"

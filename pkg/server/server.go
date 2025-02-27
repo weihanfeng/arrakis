@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -61,14 +62,10 @@ func (status vmStatus) String() string {
 }
 
 const (
-	numBootVcpus    = 2
-	memorySizeBytes = 2048 * 1024 * 1024
 	// Case sensitive.
 	serialPortMode = "Tty"
 	// Case sensitive.
 	consolePortMode = "Off"
-
-	numBlockDevices = 2
 
 	numNetDeviceQueues      = 2
 	netDeviceQueueSizeBytes = 256
@@ -81,7 +78,10 @@ const (
 	cidAllocatorLow  = 3
 	cidAllocatorHigh = 1000 // Or whatever upper limit makes sense
 
-	statefulDiskFilename = "stateful.img"
+	statefulDiskFilename      = "stateful.img"
+	minGuestMemoryMB          = 1024
+	maxGuestMemoryMB          = 32768
+	defaultGuestMemPercentage = 50
 )
 
 type portForward struct {
@@ -119,6 +119,74 @@ type vm struct {
 	vsockPath        string
 	cid              uint32
 	statefulDiskPath string
+}
+
+// calculateVCPUCount returns an appropriate number of vCPUs based on host's CPU count.
+// It ensures the VM has enough CPU resources while not overcommitting the host.
+func calculateVCPUCount() int32 {
+	hostCPUs := int32(runtime.NumCPU())
+	minVCPUs := int32(1)
+	maxVCPUs := int32(8)
+	suggestedVCPUs := hostCPUs / 2
+
+	if suggestedVCPUs < minVCPUs {
+		return minVCPUs
+	}
+	if suggestedVCPUs > maxVCPUs {
+		return maxVCPUs
+	}
+	return suggestedVCPUs
+}
+
+// calculateGuestMemorySizeInMB calculates the appropriate memory size for the guest.
+func calculateGuestMemorySizeInMB(memoryPercentage int32) (int32, error) {
+	if memoryPercentage <= 0 || memoryPercentage > 100 {
+		memoryPercentage = defaultGuestMemPercentage
+		log.Warnf(
+			"Invalid memory percentage provided: %d, using default of %d%%",
+			memoryPercentage,
+			defaultGuestMemPercentage,
+		)
+	}
+
+	var totalMemoryKB int64
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		log.Warn("Could not determine host memory size, using default of 4096 MB")
+		return minGuestMemoryMB, nil
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "MemTotal:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				memKB, err := strconv.ParseInt(fields[1], 10, 64)
+				if err == nil {
+					totalMemoryKB = memKB
+					break
+				}
+			}
+		}
+	}
+	if totalMemoryKB <= 0 {
+		return 0, fmt.Errorf("could not determine host memory size")
+	}
+	log.Infof("Total host memory: %d MB", totalMemoryKB/1024)
+
+	suggestedMemoryKB := (totalMemoryKB * int64(memoryPercentage)) / 100
+	if suggestedMemoryKB < minGuestMemoryMB*1024 {
+		return 0, fmt.Errorf(
+			"host memory allocation too small. suggested memory: %d MB (at %d%%) total memory: %d MB",
+			suggestedMemoryKB/1024,
+			memoryPercentage,
+			totalMemoryKB/1024,
+		)
+	}
+	if suggestedMemoryKB > maxGuestMemoryMB*1024 {
+		return maxGuestMemoryMB, nil
+	}
+	return int32(suggestedMemoryKB / 1024), nil
 }
 
 func getKernelCmdLine(gatewayIP string, guestIP string) string {
@@ -765,6 +833,14 @@ func (s *Server) createVM(
 			}
 		})
 
+		vcpus := calculateVCPUCount()
+		// Match virtio-blk queues to vCPUs.
+		numBlockDeviceQueues := vcpus
+		memorySizeMB, err := calculateGuestMemorySizeInMB(s.config.GuestMemPercentage)
+		if err != nil {
+			return nil, fmt.Errorf("failed to calculate guest memory size: %w", err)
+		}
+		log.Infof("Calculated vCPUs: %d, memory size: %d MB", vcpus, memorySizeMB)
 		vmConfig := chvapi.VmConfig{
 			Payload: chvapi.PayloadConfig{
 				Kernel:    String(kernelPath),
@@ -772,15 +848,17 @@ func (s *Server) createVM(
 				Initramfs: String(initramfsPath),
 			},
 			Disks: []chvapi.DiskConfig{
-				{Path: rootfsPath, Readonly: Bool(true), NumQueues: Int32(numBlockDevices)},
-				{Path: statefulDiskPath, NumQueues: Int32(numBlockDevices)},
+				{Path: rootfsPath, Readonly: Bool(true), NumQueues: &numBlockDeviceQueues},
+				{Path: statefulDiskPath, NumQueues: &numBlockDeviceQueues},
 			},
-			Cpus:    &chvapi.CpusConfig{BootVcpus: numBootVcpus, MaxVcpus: numBootVcpus},
-			Memory:  &chvapi.MemoryConfig{Size: memorySizeBytes},
+			Cpus:    &chvapi.CpusConfig{BootVcpus: vcpus, MaxVcpus: vcpus},
+			Memory:  &chvapi.MemoryConfig{Size: int64(memorySizeMB * 1024 * 1024)},
 			Serial:  chvapi.NewConsoleConfig(serialPortMode),
 			Console: chvapi.NewConsoleConfig(consolePortMode),
-			Net:     []chvapi.NetConfig{{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)}},
-			Vsock:   &chvapi.VsockConfig{Cid: int64(cid), Socket: vsockPath},
+			Net: []chvapi.NetConfig{
+				{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)},
+			},
+			Vsock: &chvapi.VsockConfig{Cid: int64(cid), Socket: vsockPath},
 		}
 		log.Info("Calling CreateVM")
 		req := apiClient.DefaultAPI.CreateVM(ctx)
