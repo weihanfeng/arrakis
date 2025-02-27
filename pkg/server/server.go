@@ -109,7 +109,7 @@ type vm struct {
 	apiClient     *chvapi.APIClient
 	process       *os.Process
 	ip            *net.IPNet
-	tapDevice     string
+	tapDevice     *fountain.TapDevice
 	status        vmStatus
 	portForwards  []portForward
 	// This is actually a unix domain socket path that maps to all vsock server
@@ -764,7 +764,7 @@ func (s *Server) createVM(
 	log.WithField("vmname", vmName).Infof("VM started Pid:%d", cmd.Process.Pid)
 
 	var guestIP *net.IPNet
-	var tapDevice string
+	var tapDevice *fountain.TapDevice
 	var portForwards []portForward
 	var vsockPath string
 	var cid uint32
@@ -772,9 +772,8 @@ func (s *Server) createVM(
 	// We only need to setup the network and call the chv create VM API if we are not restoring
 	// from a snapshot.
 	if !forRestore {
-		tapDevice = getTapDeviceName(vmName)
 		var err error
-		err = s.fountain.CreateTapDevice(tapDevice)
+		tapDevice, err = s.fountain.CreateTapDevice()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tap device: %w", err)
 		}
@@ -856,7 +855,7 @@ func (s *Server) createVM(
 			Serial:  chvapi.NewConsoleConfig(serialPortMode),
 			Console: chvapi.NewConsoleConfig(consolePortMode),
 			Net: []chvapi.NetConfig{
-				{Tap: String(tapDevice), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)},
+				{Tap: String(tapDevice.Name), NumQueues: Int32(numNetDeviceQueues), QueueSize: Int32(netDeviceQueueSizeBytes), Id: String(netDeviceId)},
 			},
 			Vsock: &chvapi.VsockConfig{Cid: int64(cid), Socket: vsockPath},
 		}
@@ -1064,7 +1063,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 			VmName:        serverapi.PtrString(vmName),
 			Ip:            serverapi.PtrString(vm.ip.String()),
 			Status:        serverapi.PtrString(vm.status.String()),
-			TapDeviceName: serverapi.PtrString(vm.tapDevice),
+			TapDeviceName: serverapi.PtrString(vm.tapDevice.Name),
 			PortForwards:  convertPortForward(vm.portForwards),
 		}, nil
 	}
@@ -1135,7 +1134,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		VmName:        serverapi.PtrString(vmName),
 		Ip:            serverapi.PtrString(vm.ip.String()),
 		Status:        serverapi.PtrString(vm.status.String()),
-		TapDeviceName: serverapi.PtrString(vm.tapDevice),
+		TapDeviceName: serverapi.PtrString(vm.tapDevice.Name),
 		PortForwards:  convertPortForward(vm.portForwards),
 	}, nil
 }
@@ -1262,7 +1261,7 @@ func (s *Server) ListAllVMs(ctx context.Context) (*serverapi.ListAllVMsResponse,
 			VmName:        serverapi.PtrString(vm.name),
 			Ip:            serverapi.PtrString(ipString),
 			Status:        serverapi.PtrString(vm.status.String()),
-			TapDeviceName: serverapi.PtrString(vm.tapDevice),
+			TapDeviceName: serverapi.PtrString(vm.tapDevice.Name),
 		}
 		vms = append(vms, vmInfo)
 	}
@@ -1285,7 +1284,7 @@ func (s *Server) ListVM(ctx context.Context, vmName string) (*serverapi.ListVMRe
 		VmName:        serverapi.PtrString(vm.name),
 		Ip:            serverapi.PtrString(ipString),
 		Status:        serverapi.PtrString(vm.status.String()),
-		TapDeviceName: serverapi.PtrString(vm.tapDevice),
+		TapDeviceName: serverapi.PtrString(vm.tapDevice.Name),
 	}, nil
 }
 
@@ -1383,12 +1382,12 @@ func (s *Server) restoreVM(
 		cleanup.Clean()
 	}()
 
-	tapDevice, guestIP, err := parseNetworkDataFromSnapshotConfig(snapshotPath + "/config.json")
+	oldtapdeviceName, guestIP, err := parseNetworkDataFromSnapshotConfig(snapshotPath + "/config.json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tap device from config: %w", err)
 	}
 	log.WithFields(log.Fields{
-		"tapDevice": tapDevice,
+		"tapDevice": oldtapdeviceName,
 		"guestIP":   guestIP.IP.String(),
 	}).Info("parse network data from snapshot config")
 
@@ -1397,19 +1396,19 @@ func (s *Server) restoreVM(
 		return nil, fmt.Errorf("failed to claim IP: %w", err)
 	}
 
-	err = s.fountain.CreateTapDevice(tapDevice)
+	newTapDevice, err := s.fountain.CreateTapDevice()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tap device: %w", err)
 	}
 	cleanup.Add(func() {
-		log.Errorf("TODO: destroy tap device: %s", tapDevice)
+		log.Errorf("TODO: destroy tap device: %s", newTapDevice.Name)
 	})
 
 	vm, err := s.createVM(ctx, vmName, "", "", "", true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VM for restore: %w", err)
 	}
-	vm.tapDevice = tapDevice
+	vm.tapDevice = newTapDevice
 	vm.ip = guestIP
 	// From this point on we need to clean up the VM if the restore fails.
 	cleanup.Add(func() {
