@@ -85,8 +85,9 @@ const (
 )
 
 type portForward struct {
-	hostPort  int32
-	guestPort int32
+	hostPort    int32
+	guestPort   int32
+	description string
 }
 
 func String(s string) *string {
@@ -217,24 +218,31 @@ func bridgeExists(bridgeName string) (bool, error) {
 }
 
 // setupPortForwardsToVM forwards the given port forwards to the VM.
-func (s *Server) setupPortForwardsToVM(vmIP string, guestPorts []int32) ([]portForward, error) {
+func (s *Server) setupPortForwardsToVM(vmIP string, guestPorts []config.PortForwardConfig) ([]portForward, error) {
 	portForwards := make([]portForward, 0, len(guestPorts))
-	for _, guestPort := range guestPorts {
+	for _, guestPortConfig := range guestPorts {
+		guestPort, err := strconv.ParseInt(guestPortConfig.Port, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid guest port %s: %w", guestPortConfig.Port, err)
+		}
+
 		hostPort, err := s.portAllocator.AllocatePort()
 		if err != nil {
 			return nil, fmt.Errorf("failed to allocate port: %w", err)
 		}
 
 		portForwards = append(portForwards, portForward{
-			hostPort:  hostPort,
-			guestPort: guestPort,
+			hostPort:    hostPort,
+			guestPort:   int32(guestPort),
+			description: guestPortConfig.Description,
 		})
 
 		log.Infof(
-			"Setting up port forward %d -> %s:%d",
+			"Setting up port forward %d -> %s:%d (%s)",
 			hostPort,
 			vmIP,
 			guestPort,
+			guestPortConfig.Description,
 		)
 		cmd := exec.Command(
 			"iptables",
@@ -492,12 +500,13 @@ func reapProcess(process *os.Process, logger *log.Entry, timeout time.Duration) 
 }
 
 // convertPortForward converts the port forwards from the config to the API format.
-func convertPortForward(pfs []portForward) []serverapi.StartVMResponsePortForwardsInner {
-	result := make([]serverapi.StartVMResponsePortForwardsInner, 0, len(pfs))
+func convertPortForward(pfs []portForward) []serverapi.PortForward {
+	result := make([]serverapi.PortForward, 0, len(pfs))
 	for _, pf := range pfs {
-		result = append(result, serverapi.StartVMResponsePortForwardsInner{
-			HostPort:  serverapi.PtrString(strconv.Itoa(int(pf.hostPort))),
-			GuestPort: serverapi.PtrString(strconv.Itoa(int(pf.guestPort))),
+		result = append(result, serverapi.PortForward{
+			HostPort:    serverapi.PtrString(strconv.Itoa(int(pf.hostPort))),
+			GuestPort:   serverapi.PtrString(strconv.Itoa(int(pf.guestPort))),
+			Description: serverapi.PtrString(pf.description),
 		})
 	}
 	return result
@@ -1262,6 +1271,7 @@ func (s *Server) ListAllVMs(ctx context.Context) (*serverapi.ListAllVMsResponse,
 			Ip:            serverapi.PtrString(ipString),
 			Status:        serverapi.PtrString(vm.status.String()),
 			TapDeviceName: serverapi.PtrString(vm.tapDevice.Name),
+			PortForwards:  convertPortForward(vm.portForwards),
 		}
 		vms = append(vms, vmInfo)
 	}
@@ -1285,6 +1295,7 @@ func (s *Server) ListVM(ctx context.Context, vmName string) (*serverapi.ListVMRe
 		Ip:            serverapi.PtrString(ipString),
 		Status:        serverapi.PtrString(vm.status.String()),
 		TapDeviceName: serverapi.PtrString(vm.tapDevice.Name),
+		PortForwards:  convertPortForward(vm.portForwards),
 	}, nil
 }
 

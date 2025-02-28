@@ -11,8 +11,10 @@ hostservices:
     rootfs: "./out/chv-guestrootfs-ext4.img"
     initramfs: "./out/initramfs.cpio.gz"
     port_forwards:
-      - "4030"
-      - "5901"
+      - port: "4030"
+        description: "code"
+      - port: "5901"
+        description: "gui"
     stateful_size_in_mb: "8192"
     guest_mem_percentage: "50"
   client:

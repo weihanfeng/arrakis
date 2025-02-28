@@ -108,11 +108,29 @@ func listAllVMs() error {
 		return fmt.Errorf("failed to list all VMs: error: %s code: %v", string(body), err)
 	}
 
-	resp_bytes, err := resp.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
+	// Format output to better show port forwards with descriptions
+	fmt.Println("Available VMs:")
+	fmt.Println("-------------")
+
+	for _, vm := range resp.GetVms() {
+		fmt.Printf("VM Name: %s\n", vm.GetVmName())
+		fmt.Printf("Status: %s\n", vm.GetStatus())
+		fmt.Printf("IP Address: %s\n", vm.GetIp())
+		fmt.Printf("Tap Device: %s\n", vm.GetTapDeviceName())
+
+		// Print port forwards with descriptions
+		if len(vm.GetPortForwards()) > 0 {
+			fmt.Println("Port Forwards:")
+			for _, pf := range vm.GetPortForwards() {
+				fmt.Printf("  %s -> %s: %s\n",
+					pf.GetHostPort(),
+					pf.GetGuestPort(),
+					pf.GetDescription())
+			}
+		}
+		fmt.Println("-------------")
 	}
-	log.Infof("VMs: %v", string(resp_bytes))
+
 	return nil
 }
 
@@ -144,20 +162,6 @@ func createApiClient(serverAddr string) (*serverapi.APIClient, error) {
 	apiClient = serverapi.NewAPIClient(configuration)
 
 	return apiClient, nil
-}
-
-func listVM(vmName string) error {
-	resp, _, err := apiClient.DefaultAPI.VmsNameGet(context.Background(), vmName).Execute()
-	if err != nil {
-		return fmt.Errorf("failed to list VM: %w", err)
-	}
-
-	resp_bytes, err := resp.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
-	}
-	log.Infof("VM: %v", string(resp_bytes))
-	return nil
 }
 
 func snapshotVM(vmName string, outputDir string) error {
@@ -305,6 +309,32 @@ func downloadFiles(vmName string, paths []string) error {
 		}
 		log.Infof("downloaded file: %s", file.GetPath())
 	}
+	return nil
+}
+
+func listVM(vmName string) error {
+	resp, http_resp, err := apiClient.DefaultAPI.VmsNameGet(context.Background(), vmName).Execute()
+	if err != nil {
+		body, _ := io.ReadAll(http_resp.Body)
+		return fmt.Errorf("failed to get VM info: error: %s code: %v", string(body), err)
+	}
+
+	fmt.Printf("VM Name: %s\n", resp.GetVmName())
+	fmt.Printf("Status: %s\n", resp.GetStatus())
+	fmt.Printf("IP Address: %s\n", resp.GetIp())
+	fmt.Printf("Tap Device: %s\n", resp.GetTapDeviceName())
+
+	// Print port forwards with descriptions
+	if len(resp.GetPortForwards()) > 0 {
+		fmt.Println("Port Forwards:")
+		for _, pf := range resp.GetPortForwards() {
+			fmt.Printf("  %s -> %s: %s\n",
+				pf.GetHostPort(),
+				pf.GetGuestPort(),
+				pf.GetDescription())
+		}
+	}
+
 	return nil
 }
 

@@ -279,17 +279,10 @@ components:
           type: string
         tapDeviceName:
           type: string
-        codeServerPort:
-          type: string
         portForwards:
           type: array
           items:
-            type: object
-            properties:
-              hostPort:
-                type: string
-              guestPort:
-                type: string
+            $ref: '#/components/schemas/PortForward'
     VMRequest:
       type: object
       properties:
@@ -324,6 +317,10 @@ components:
                 type: string
               tapDeviceName:
                 type: string
+              portForwards:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PortForward'
     ListVMResponse:
       type: object
       properties:
@@ -335,6 +332,10 @@ components:
           type: string
         tapDeviceName:
           type: string
+        portForwards:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortForward'
     VMSnapshotRequest:
       type: object
       properties:
@@ -428,4 +429,14 @@ components:
               error:
                 type: string
                 description: Error message if file download failed
+    PortForward:
+      type: object
+      properties:
+        hostPort:
+          type: string
+        guestPort:
+          type: string
+        description:
+          type: string
+          description: Description of what's running on this port
 
