@@ -670,6 +670,7 @@ func NewServer(config config.ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("failed to create CID allocator: %w", err)
 	}
 
+	log.Infof("Server config: %+v", config)
 	return &Server{
 		vms:           make(map[string]*vm),
 		fountain:      fountain.NewFountain(config.BridgeName),
@@ -678,10 +679,6 @@ func NewServer(config config.ServerConfig) (*Server, error) {
 		cidAllocator:  cidAllocator,
 		config:        config,
 	}, nil
-}
-
-func getTapDeviceName(vmName string) string {
-	return fmt.Sprintf("tap-%s", vmName)
 }
 
 func (s *Server) getVMAtomic(vmName string) *vm {
@@ -1056,7 +1053,6 @@ type Server struct {
 }
 
 func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*serverapi.StartVMResponse, error) {
-	log.Infof("Server config in StartVM: %+v", s.config)
 	vmName := req.GetVmName()
 	if vmName == "" {
 		return nil, fmt.Errorf("vmName is required")
