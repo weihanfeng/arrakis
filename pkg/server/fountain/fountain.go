@@ -79,25 +79,65 @@ func (f *Fountain) freeTapID(id int32) error {
 	return nil
 }
 
-// CreateTapDevice creates a new tap device with an auto-allocated ID and returns a TapDevice
-func (f *Fountain) CreateTapDevice() (*TapDevice, error) {
-	id, err := f.allocateTapID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to allocate tap ID: %w", err)
+// claimID attempts to claim a specific tap ID from the pool
+// It returns an error if the ID is not available or outside the valid range
+func (f *Fountain) claimID(id int32) error {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	// Check if ID is in valid range
+	if id < f.lowID || id > f.highID {
+		return fmt.Errorf("tap ID %d is outside allocator range %d-%d", id, f.lowID, f.highID)
 	}
 
-	// Set up cleanup that will free the tap ID if the function returns with an error
+	// Check if ID is available
+	isAvailable := false
+	for i, availableID := range f.available {
+		if availableID == id {
+			// Remove this ID from the available pool
+			f.available = append(f.available[:i], f.available[i+1:]...)
+			isAvailable = true
+			break
+		}
+	}
+
+	if !isAvailable {
+		return fmt.Errorf("tap ID %d is not available", id)
+	}
+
+	return nil
+}
+
+// CreateTapDevice creates a new tap device with an auto-allocated ID and returns a TapDevice
+// If id is provided, it will attempt to claim that specific ID instead of auto-allocating
+func (f *Fountain) CreateTapDevice(id *int32) (*TapDevice, error) {
+	logger := log.WithField("action", "CreateTapDevice")
 	cleanup := cleanup.Make(func() {
-		log.WithField("tapID", id).Debug("createTapDevice cleanup")
+		logger.Debug("createTapDevice cleanup")
 	})
-	defer cleanup.Clean() // This will run the cleanup unless we call cleanup.Release()
+	defer cleanup.Clean()
+
+	var allocatedID int32
+	var err error
+	if id != nil {
+		if err := f.claimID(*id); err != nil {
+			return nil, err
+		}
+		allocatedID = *id
+	} else {
+		// Use existing auto-allocation logic
+		allocatedID, err = f.allocateTapID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate tap ID: %w", err)
+		}
+	}
 	cleanup.Add(func() {
-		if err := f.freeTapID(id); err != nil {
-			log.WithError(err).Errorf("failed to free tap ID %d during cleanup", id)
+		if err := f.freeTapID(allocatedID); err != nil {
+			logger.WithError(err).Errorf("failed to free tap ID %d during cleanup", allocatedID)
 		}
 	})
 
-	deviceName := fmt.Sprintf("tap%d", id)
+	deviceName := fmt.Sprintf("tap%d", allocatedID)
 	if output, err := exec.Command(
 		"ip", "tuntap", "add", "dev", deviceName, "mode", "tap",
 	).CombinedOutput(); err != nil {
@@ -119,7 +159,7 @@ func (f *Fountain) CreateTapDevice() (*TapDevice, error) {
 	cleanup.Release()
 	return &TapDevice{
 		Name: deviceName,
-		ID:   id,
+		ID:   allocatedID,
 	}, nil
 }
 

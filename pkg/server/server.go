@@ -79,6 +79,7 @@ const (
 	cidAllocatorHigh = 1000 // Or whatever upper limit makes sense
 
 	statefulDiskFilename      = "stateful.img"
+	cidFilename               = "cid"
 	minGuestMemoryMB          = 1024
 	maxGuestMemoryMB          = 32768
 	defaultGuestMemPercentage = 50
@@ -417,6 +418,37 @@ func setupBridgeAndFirewall(
 
 func getVmStateDirPath(stateDir string, vmName string) string {
 	return path.Join(stateDir, vmName)
+}
+
+// copyFile copies a file from sourcePath to destPath.
+// Both parent directories should exist before calling this function.
+func copyFile(sourcePath, destPath string) error {
+	if _, err := os.Stat(sourcePath); err != nil {
+		return fmt.Errorf("source file not found: %w", err)
+	}
+
+	srcFile, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, srcFile)
+	if err != nil {
+		return fmt.Errorf("failed to copy file: %w", err)
+	}
+
+	if err := destFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync destination file: %w", err)
+	}
+
+	return nil
 }
 
 func getVmSocketPath(vmStateDir string, vmName string) string {
@@ -779,7 +811,7 @@ func (s *Server) createVM(
 	// from a snapshot.
 	if !forRestore {
 		var err error
-		tapDevice, err = s.fountain.CreateTapDevice()
+		tapDevice, err = s.fountain.CreateTapDevice(nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create tap device: %w", err)
 		}
@@ -1306,11 +1338,19 @@ func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotReques
 		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
 	}
 
-	// Create the output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		logger.WithError(err).Error("failed to create snapshot directory")
 		return nil, fmt.Errorf("failed to create snapshot directory: %w", err)
 	}
+	cleanup := cleanup.Make(func() {
+		logger.Info("cleaning up snapshot directory after error")
+		if err := os.RemoveAll(outputDir); err != nil {
+			logger.WithError(err).Error("failed to clean up snapshot directory")
+		}
+	})
+	defer func() {
+		cleanup.Clean()
+	}()
 
 	// Pause the VM first as this is a prerequisite for taking a snapshot as per the CHV API spec.
 	pauseReq := vm.apiClient.DefaultAPI.PauseVM(ctx)
@@ -1340,6 +1380,31 @@ func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotReques
 		vm.status = vmStatusRunning
 	}()
 
+	// Copy the stateful disk to the snapshot directory; since VMM snapshot doesn't save this.
+	statefulDiskDest := path.Join(outputDir, statefulDiskFilename)
+	logger.WithFields(log.Fields{
+		"source":      vm.statefulDiskPath,
+		"destination": statefulDiskDest,
+	}).Info("copying stateful disk to snapshot directory")
+	err = copyFile(vm.statefulDiskPath, statefulDiskDest)
+	if err != nil {
+		logger.WithError(err).Error("failed to copy stateful disk")
+		return nil, fmt.Errorf("failed to copy stateful disk to snapshot directory: %w", err)
+	}
+
+	// Store the VM CID in a file in the output snapshot directory; since VMM snapshot doesn't save
+	// this.
+	cidFilePath := path.Join(outputDir, cidFilename)
+	logger.WithFields(log.Fields{
+		"cid":     vm.cid,
+		"cidFile": cidFilePath,
+	}).Info("writing VM CID to file")
+	cidContent := fmt.Sprintf("%d", vm.cid)
+	if err := os.WriteFile(cidFilePath, []byte(cidContent), 0644); err != nil {
+		logger.WithError(err).Error("failed to write CID to file")
+		return nil, fmt.Errorf("failed to write CID to file: %w", err)
+	}
+
 	// The API expects a "file://" URL.
 	outputUrl := fmt.Sprintf("file://%s", outputDir)
 	snapshotConfig := chvapi.VmSnapshotConfig{
@@ -1354,12 +1419,12 @@ func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotReques
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("failed to create snapshot: %d: %s: %w", resp.StatusCode, string(body), err)
 	}
-
 	if resp.StatusCode != 204 {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("failed to create snapshot: %d: %s", resp.StatusCode, string(body))
 	}
 
+	cleanup.Release()
 	logger.WithFields(log.Fields{
 		"destination": outputDir,
 		"statusCode":  resp.StatusCode,
@@ -1379,11 +1444,9 @@ func (s *Server) restoreVM(
 		"snapshotPath": snapshotPath,
 	})
 	logger.Info("received request to restore VM from snapshot")
-
 	cleanup := cleanup.Make(func() {
 		logger.Info("restore VM clean up done")
 	})
-
 	defer func() {
 		// Won't do anything if no error since we call `Release` it at the end.
 		cleanup.Clean()
@@ -1393,9 +1456,13 @@ func (s *Server) restoreVM(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tap device from config: %w", err)
 	}
-	log.WithFields(log.Fields{
-		"tapDevice": oldtapdeviceName,
-		"guestIP":   guestIP.IP.String(),
+	oldTapDeviceID, err := parseTapDeviceId(oldtapdeviceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tap device ID: %w", err)
+	}
+	logger.WithFields(log.Fields{
+		"oldTapDevice": oldtapdeviceName,
+		"guestIP":      guestIP.IP.String(),
 	}).Info("parse network data from snapshot config")
 
 	err = s.ipAllocator.ClaimIP(guestIP.IP)
@@ -1403,31 +1470,78 @@ func (s *Server) restoreVM(
 		return nil, fmt.Errorf("failed to claim IP: %w", err)
 	}
 
-	newTapDevice, err := s.fountain.CreateTapDevice()
+	oldTapDevice, err := s.fountain.CreateTapDevice(&oldTapDeviceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tap device: %w", err)
 	}
 	cleanup.Add(func() {
-		log.Errorf("TODO: destroy tap device: %s", newTapDevice.Name)
+		logger.Errorf("TODO: destroy tap device: %s", oldTapDevice.Name)
 	})
 
 	vm, err := s.createVM(ctx, vmName, "", "", "", true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VM for restore: %w", err)
 	}
-	vm.tapDevice = newTapDevice
-	vm.ip = guestIP
 	// From this point on we need to clean up the VM if the restore fails.
 	cleanup.Add(func() {
 		err := s.destroyVM(ctx, vmName)
-		log.WithError(err).Errorf("failed to destroy VM during restore cleanup")
+		logger.WithError(err).Errorf("failed to destroy VM during restore cleanup")
 	})
-	log.WithField("guestIP", guestIP.IP.String()).Info("restored VM")
+	vm.tapDevice = oldTapDevice
+	vm.ip = guestIP
+
+	// Copy the stateful disk from the snapshot to the VM state directory.
+	sourcePath := path.Join(snapshotPath, statefulDiskFilename)
+	destPath := path.Join(vm.stateDirPath, statefulDiskFilename)
+	logger.WithFields(log.Fields{
+		"source":      sourcePath,
+		"destination": destPath,
+	}).Info("copying stateful disk from snapshot")
+	err = copyFile(sourcePath, destPath)
+	if err != nil {
+		logger.WithError(err).Error("failed to copy stateful disk from snapshot")
+		return nil, fmt.Errorf("failed to copy stateful disk from snapshot: %w", err)
+	}
+	logger.Info("successfully copied stateful disk from snapshot")
+
+	portForwards, err := s.setupPortForwardsToVM(guestIP.IP.String(), s.config.PortForwards)
+	if err != nil {
+		cleanupAllIPTablesRulesForIP(guestIP.IP.String())
+		return nil, fmt.Errorf("failed to forward ports to VM: %w", err)
+	}
+	cleanup.Add(func() {
+		logger.WithField("ip", guestIP.String()).Info("deleting port forwards")
+		cleanupAllIPTablesRulesForIP(guestIP.IP.String())
+	})
+	vm.portForwards = portForwards
+
+	cidFilePath := path.Join(snapshotPath, cidFilename)
+	cidBytes, err := os.ReadFile(cidFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CID file from snapshot: %w", err)
+	}
+	cidStr := strings.TrimSpace(string(cidBytes))
+	cid, err := strconv.ParseUint(cidStr, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CID from file: %w", err)
+	}
+	err = s.cidAllocator.ClaimCID(uint32(cid))
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim CID from allocator: %w", err)
+	}
+	vm.cid = uint32(cid)
+	logger.WithField("cid", vm.cid).Info("claimed CID from snapshot")
+	cleanup.Add(func() {
+		if err := s.cidAllocator.FreeCID(vm.cid); err != nil {
+			logger.WithError(err).Errorf("failed to free CID %d during restore cleanup", vm.cid)
+		}
+	})
 
 	err = vm.restore(ctx, snapshotPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to restore VM: %w", err)
 	}
+	logger.Info("restored VM")
 
 	err = vm.resume(ctx)
 	if err != nil {
@@ -1621,4 +1735,24 @@ func (s *Server) VMFileDownload(ctx context.Context, vmName string, paths string
 		}
 	}
 	return apiResp, nil
+}
+
+// parseTapDeviceId extracts the numeric ID from a tap device name.
+// It expects the name to be in the format "tap<id>" where <id> is an integer.
+func parseTapDeviceId(tapDeviceName string) (int32, error) {
+	if !strings.HasPrefix(tapDeviceName, "tap") {
+		return 0, fmt.Errorf("invalid tap device name format: %s, expected format: tap<id>", tapDeviceName)
+	}
+
+	idStr := strings.TrimPrefix(tapDeviceName, "tap")
+	if idStr == "" {
+		return 0, fmt.Errorf("missing numeric ID in tap device name: %s", tapDeviceName)
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse tap device ID from %s: %w", tapDeviceName, err)
+	}
+
+	return int32(id), nil
 }

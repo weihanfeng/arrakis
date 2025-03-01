@@ -67,4 +67,18 @@ func (a *CIDAllocator) FreeCID(cid uint32) error {
 
 	a.available = append(a.available, cid)
 	return nil
+}
+
+// ClaimCID claims a specific CID from the pool of available CIDs
+func (a *CIDAllocator) ClaimCID(cid uint32) error {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	for i, c := range a.available {
+		if c == cid {
+			a.available = append(a.available[:i], a.available[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("CID %d is not available", cid)
 } 
