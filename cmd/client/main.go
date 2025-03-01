@@ -73,8 +73,8 @@ func startVM(
 	if snapshotPath != "" {
 		// If snapshot path is provided, restore the VM from the snapshot,
 		startVMRequest = &serverapi.StartVMRequest{
-			VmName:     serverapi.PtrString(vmName),
-			EntryPoint: serverapi.PtrString(snapshotPath),
+			VmName:       serverapi.PtrString(vmName),
+			SnapshotPath: serverapi.PtrString(snapshotPath),
 		}
 	} else {
 		startVMRequest = &serverapi.StartVMRequest{
