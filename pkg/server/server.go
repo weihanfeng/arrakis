@@ -674,6 +674,12 @@ func NewServer(config config.ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("failed to create vm state dir: %v err: %w", config.StateDir, err)
 	}
 
+	// Will be used to store snapshots.
+	snapshotsDir := path.Join(config.StateDir, "snapshots")
+	if err := os.MkdirAll(snapshotsDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create snapshots directory: %w", err)
+	}
+
 	ipBackupFile := fmt.Sprintf("/tmp/iptables-backup-%s.rules", time.Now().Format(time.UnixDate))
 	if err := setupBridgeAndFirewall(
 		ipBackupFile,
@@ -1090,8 +1096,8 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		return nil, fmt.Errorf("vmName is required")
 	}
 
-	if snapshotPath := req.GetSnapshotPath(); snapshotPath != "" {
-		vm, err := s.restoreVM(ctx, vmName, snapshotPath)
+	if snapshotId := req.GetSnapshotId(); snapshotId != "" {
+		vm, err := s.restoreVM(ctx, vmName, snapshotId)
 		if err != nil {
 			return nil, fmt.Errorf("failed to restore VM from snapshot: %w", err)
 		}
@@ -1327,15 +1333,20 @@ func (s *Server) ListVM(ctx context.Context, vmName string) (*serverapi.ListVMRe
 	}, nil
 }
 
-func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotRequest) (*serverapi.VMSnapshotResponse, error) {
-	vmName := req.GetVmName()
-	outputDir := req.GetOutputFile()
+func (s *Server) SnapshotVM(ctx context.Context, vmName string, snapshotId string) (*serverapi.VMSnapshotResponse, error) {
 	logger := log.WithField("vmName", vmName)
-	logger.Infof("received request to snapshot VM")
+	logger.Infof("received request to snapshot VM with ID: %s", snapshotId)
 
 	vm := s.getVMAtomic(vmName)
 	if vm == nil {
 		return nil, status.Error(codes.NotFound, fmt.Sprintf("vm not found: %s", vmName))
+	}
+
+	snapshotsDir := path.Join(s.config.StateDir, "snapshots")
+	outputDir := path.Join(snapshotsDir, snapshotId)
+	if _, err := os.Stat(outputDir); !os.IsNotExist(err) {
+		logger.WithField("snapshotId", snapshotId).Error("snapshot directory already exists")
+		return nil, fmt.Errorf("snapshot with ID %s already exists", snapshotId)
 	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -1430,15 +1441,22 @@ func (s *Server) SnapshotVM(ctx context.Context, req *serverapi.VMSnapshotReques
 		"statusCode":  resp.StatusCode,
 	}).Info("VM snapshot created successfully")
 	return &serverapi.VMSnapshotResponse{
-		Success: serverapi.PtrBool(true),
+		SnapshotId: serverapi.PtrString(snapshotId),
 	}, nil
 }
 
 func (s *Server) restoreVM(
 	ctx context.Context,
 	vmName string,
-	snapshotPath string,
+	snapshotId string,
 ) (*vm, error) {
+	// Construct the snapshot path from the snapshot ID
+	snapshotPath := path.Join(s.config.StateDir, "snapshots", snapshotId)
+
+	// Check if the snapshot directory exists
+	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("snapshot with ID %s does not exist", snapshotId)
+	}
 	logger := log.WithFields(log.Fields{
 		"vmName":       vmName,
 		"snapshotPath": snapshotPath,

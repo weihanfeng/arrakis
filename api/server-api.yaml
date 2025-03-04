@@ -143,16 +143,16 @@ paths:
             schema:
               type: object
               properties:
-                outputFile:
+                snapshotId:
                   type: string
-                  description: Path where the snapshot should be saved
+                  description: Unique identifier for the snapshot
       responses:
         '200':
           description: Successfully created snapshot
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VMResponse'
+                $ref: '#/components/schemas/VMSnapshotResponse'
         '400':
           description: Invalid request body
         '404':
@@ -265,9 +265,9 @@ components:
         entryPoint:
           type: string
           description: Optional entry point to start in the VM upon boot
-        snapshotPath:
+        snapshotId:
           type: string
-          description: Optional path to restore from a snapshot. If provided, kernel and rootfs are ignored
+          description: Optional ID of the snapshot to restore from. If provided, kernel and rootfs are ignored
     StartVMResponse:
       type: object
       properties:
@@ -336,39 +336,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PortForward'
-    VMSnapshotRequest:
-      type: object
-      properties:
-        vmName:
-          type: string
-          description: Name of the VM to snapshot
-        outputFile:
-          type: string
-          description: Path where the snapshot should be saved
-      required:
-        - vmName
-    VMSnapshotResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-    VMRestoreRequest:
-      type: object
-      properties:
-        vmName:
-          type: string
-          description: Name to give to the restored VM
-        snapshotPath:
-          type: string
-          description: Path to the snapshot directory to restore from
-      required:
-        - vmName
-        - snapshotPath
-    VMRestoreResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
     VmCommandRequest:
       type: object
       required:
@@ -439,4 +406,8 @@ components:
         description:
           type: string
           description: Description of what's running on this port
-
+    VMSnapshotResponse:
+      type: object
+      properties:
+        snapshotId:
+          type: string

@@ -104,20 +104,14 @@ func (s *restServer) snapshotVM(w http.ResponseWriter, r *http.Request) {
 	vmName := vars["name"]
 
 	var req struct {
-		OutputFile string `json:"outputFile,omitempty"`
+		SnapshotId string `json:"snapshotId,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	// Create the VMSnapshotRequest with the path parameter
-	snapshotReq := serverapi.VMSnapshotRequest{
-		VmName:     vmName,
-		OutputFile: &req.OutputFile,
-	}
-
-	resp, err := s.vmServer.SnapshotVM(r.Context(), &snapshotReq)
+	resp, err := s.vmServer.SnapshotVM(r.Context(), vmName, req.SnapshotId)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create snapshot: %v", err), http.StatusInternalServerError)
 		return

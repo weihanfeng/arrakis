@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -67,14 +66,14 @@ func startVM(
 	kernel string,
 	rootfs string,
 	entryPoint string,
-	snapshotPath string,
+	snapshotId string,
 ) error {
 	var startVMRequest *serverapi.StartVMRequest
-	if snapshotPath != "" {
-		// If snapshot path is provided, restore the VM from the snapshot,
+	if snapshotId != "" {
+		// If snapshot ID is provided, restore the VM from the snapshot
 		startVMRequest = &serverapi.StartVMRequest{
-			VmName:       serverapi.PtrString(vmName),
-			SnapshotPath: serverapi.PtrString(snapshotPath),
+			VmName:     serverapi.PtrString(vmName),
+			SnapshotId: serverapi.PtrString(snapshotId),
 		}
 	} else {
 		startVMRequest = &serverapi.StartVMRequest{
@@ -164,39 +163,28 @@ func createApiClient(serverAddr string) (*serverapi.APIClient, error) {
 	return apiClient, nil
 }
 
-func snapshotVM(vmName string, outputDir string) error {
-	if outputDir == "" {
+func snapshotVM(vmName string, snapshotId string) error {
+	if snapshotId == "" {
 		timestamp := time.Now().Format("20060102-150405")
-		outputDir = fmt.Sprintf("snapshot-%s-%s", vmName, timestamp)
-	}
-
-	// Convert the path to absolute path
-	absPath, err := filepath.Abs(outputDir)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
+		snapshotId = fmt.Sprintf("snapshot-%s-%s", vmName, timestamp)
 	}
 
 	req := apiClient.DefaultAPI.VmsNameSnapshotsPost(context.Background(), vmName)
 	req = req.VmsNameSnapshotsPostRequest(serverapi.VmsNameSnapshotsPostRequest{
-		OutputFile: serverapi.PtrString(absPath),
+		SnapshotId: serverapi.PtrString(snapshotId),
 	})
 
-	_, httpResp, err := req.Execute()
+	resp, httpResp, err := req.Execute()
 	if err != nil {
 		body, _ := io.ReadAll(httpResp.Body)
 		return fmt.Errorf("failed to create snapshot: error: %s code: %v", string(body), err)
 	}
-
-	log.Infof("successfully created snapshot for VM %s in directory %s", vmName, outputDir)
+	log.Infof("successfully created snapshot for VM %s with ID %s", vmName, resp.GetSnapshotId())
 	return nil
 }
 
-func restoreVM(vmName string, snapshotPath string) error {
-	snapshotAbsPath, err := filepath.Abs(snapshotPath)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path for snapshot: %w", err)
-	}
-	return startVM(vmName, "", "", "", snapshotAbsPath)
+func restoreVM(vmName string, snapshotId string) error {
+	return startVM(vmName, "", "", "", snapshotId)
 }
 
 func pauseVM(vmName string) error {
@@ -479,14 +467,14 @@ func main() {
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:     "output",
-						Aliases:  []string{"o"},
-						Usage:    "Output directory path for the snapshot",
+						Name:     "id",
+						Aliases:  []string{"i"},
+						Usage:    "Unique identifier for the snapshot",
 						Required: false,
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return snapshotVM(ctx.String("name"), ctx.String("output"))
+					return snapshotVM(ctx.String("name"), ctx.String("id"))
 				},
 			},
 			{
@@ -500,14 +488,14 @@ func main() {
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:     "snapshot",
-						Aliases:  []string{"s"},
-						Usage:    "Path to the snapshot directory",
+						Name:     "id",
+						Aliases:  []string{"i"},
+						Usage:    "ID of the snapshot to restore from",
 						Required: true,
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return restoreVM(ctx.String("name"), ctx.String("snapshot"))
+					return restoreVM(ctx.String("name"), ctx.String("id"))
 				},
 			},
 			{
