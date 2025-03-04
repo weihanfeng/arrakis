@@ -99,3 +99,10 @@ RUN ln -s /usr/lib/systemd/system/chv-vsockserver.service /etc/systemd/system/mu
 # inside the guest has race conditions while configuring the network.
 RUN ln -s /dev/null /etc/systemd/network/99-default.link
 ##############
+
+RUN wget -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+    # Any failure here will be fixed by the `install -f` command below.
+    dpkg -i /tmp/google-chrome-stable_current_amd64.deb || true && \
+    apt-get update && apt-get install -f -y && \
+    rm -rf /tmp/google-chrome-stable_current_amd64.deb && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
