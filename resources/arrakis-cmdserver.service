@@ -1,10 +1,10 @@
 [Unit]
 Description=CHV Command Server
-After=chv-guestinit.service
+After=arrakis-guestinit.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/chv-cmdserver
+ExecStart=/usr/local/bin/arrakis-cmdserver
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

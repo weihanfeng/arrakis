@@ -12,8 +12,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 
-	"github.com/abshkbh/chv-starter-pack/out/gen/serverapi"
-	"github.com/abshkbh/chv-starter-pack/pkg/config"
+	"github.com/abshkbh/arrakis/out/gen/serverapi"
+	"github.com/abshkbh/arrakis/pkg/config"
 )
 
 var (
@@ -328,7 +328,7 @@ func listVM(vmName string) error {
 
 func main() {
 	app := &cli.App{
-		Name:  "chv-client",
+		Name:  "arrakis-client",
 		Usage: "A CLI for managing VMs",
 		Flags: []cli.Flag{
 			&cli.StringFlag{

@@ -1,6 +1,6 @@
 [Unit]
 Description=CHV VNC Server
-After=chv-guestinit.service
+After=arrakis-guestinit.service
 
 [Service]
 Type=forking

@@ -1,61 +1,82 @@
-# chv-starter-pack
+# Arrakis
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-- MicroVMs are lightweight Virtual Machines (compared to traditional VMs) powered by Rust based Virtual Machine Managers such as [firecracker](https://github.com/firecracker-microvm/firecracker) and [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor).
+## Introduction ##
 
-- **chv-starter-pack** provides everything required to get started with creating, managing and configuring [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) based MicroVMs locally on Linux based machines.
+**Arrakis** provides a **fully customizable** and **self-hosted** solution to spawn and manage Sandboxes for code execution and computer use.
 
-- [Ongoing Work](#ongoing-work) on a Python SDK to give LLMs a coding and / or general purpose secure sandbox.
+- Each sandbox runs Ubuntu inside with a code execution service and a VNC server running at boot.
 
----
+- A REST API and a Python SDK let clients (both humans and AI Agents) programatically spawn sandboxes, upload files, a and execute code inside each sandbox.
 
-## Features
+- Automatically sets up and manages port forwarding from the self-hosted public server to the sanboxes running on it i.e. clients can easily access the sandbox GUI (including Chrome for computer use) without extra setup.
 
-`chv-starter-pack` includes the following services and features -
+- Supports **snapshot-and-restore** out of the box i.e. AI Agents can do some work, snapshot a sandbox, and later backtrack to the exact previous state by restoring the snapshot. This means any processes spawned, files modified etc. will be restored as is inside the sandbox.Useful for Monte Carlo Tree Search based agents or explainability of elaborate agent execution flows.
 
-- **chv-restserver**
-  - A daemon that exposes a REST API to *start*, *stop*, *destroy*, *list-all* VMs. Every VM started is managed by this server i.e. the lifetime of each VM is tied to the lifetime of this daemon.
-  - The api is present at [api/server-api.yaml](./api/server-api.yaml).
-  - [Code](./cmd/restserver)
-- **chv-client**
-  - A Golang CLI that you can use to interact with **chv-restserver** to spawn and manage VMs.
-  - [Code](./cmd/client)
-- Dockerfile based rootfs customization.
-  - Easily add packages and binaries to your VM's rootfs by manipulating a [Dockerfile](./resources/scripts/rootfs/Dockerfile).
-- Out of the box networking setup for the guest.
-  - Each VM gets a tap device that gets added to a Linux bridge on the host.
-  - ssh access to the VM.
-- Prebuilt Linux kernel for the VMs
-  - Or pass your own kernel to **chv-client** while starting VMs.
+- Secure by design, each sandbox [runs in a MicroVM](#architecture).
 
 ---
 
 ## Table of Contents
 
-- [chv-starter-pack](#chv-starter-pack)
-  - [Features](#features)
-  - [Table of Contents](#table-of-contents)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Build](#build)
-  - [Build a custom rootfs for the guest](#build-a-custom-rootfs-for-the-guest)
-  - [Configuration](#configuration)
-  - [Usage](#usage)
-  - [Ongoing Work](#ongoing-work)
-  - [Contribution](#contribution)
-    - [How to Contribute](#how-to-contribute)
-      - [Reporting Bugs](#reporting-bugs)
-      - [Suggesting Features](#suggesting-features)
-      - [Pull Requests](#pull-requests)
-  - [License](#license)
+- [Introduction](#introduction)
+- [Architecture And Features](#architecture-and-features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Build](#build)
+- [Build a custom rootfs for the guest](#build-a-custom-rootfs-for-the-guest)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Ongoing Work](#ongoing-work)
+- [Contribution](#contribution)
+  - [How to Contribute](#how-to-contribute)
+    - [Reporting Bugs](#reporting-bugs)
+    - [Suggesting Features](#suggesting-features)
+    - [Pull Requests](#pull-requests)
+- [License](#license)
+
 ___
+
+## Architecture And Features
+
+`arrakis` includes the following services and features
+
+- **REST API**
+  - **arrakis-restserver**
+    - A daemon that exposes a REST API to *start*, *stop*, *destroy*, *list-all* VMs. Every VM started is managed by this server i.e. the lifetime of each VM is tied to the lifetime of this daemon.
+    - The api is present at [api/server-api.yaml](./api/server-api.yaml).
+    - [Code](./cmd/restserver)
+  - **arrakis-client**
+    - A Golang CLI that you can use to interact with **arrakis-restserver** to spawn and manage VMs.
+    - [Code](./cmd/client)
+
+- **Python SDK**
+  - TODO.
+
+- **Security**
+  - Each sandbox runs in a MicroVM.
+    - MicroVMs are lightweight Virtual Machines (compared to traditional VMs) powered by Rust based Virtual Machine Managers such as [firecracker](https://github.com/firecracker-microvm/firecracker) and [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor).
+    - **Arrakis** uses [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) as the VMM.
+  - Any untrusted code executed within the sandbox is isolated from the host machine as well as other agents.
+  - We use overlayfs to also protect the root filesystem of each sandbox.
+
+- **Customization**
+  - Dockerfile based rootfs customization.
+    - Easily add packages and binaries to your VM's rootfs by manipulating a [Dockerfile](./resources/scripts/rootfs/Dockerfile).
+  - Out of the box networking setup for the guest.
+    - Each sandbox gets a tap device that gets added to a Linux bridge on the host.
+    - ssh access to the sandbox.
+  - Prebuilt Linux kernel for the sandbox
+    - Or pass your own kernel to **arrakis-client** while starting VMs.
+
+---
 
 ## Prerequisites
 
 - `cloud-hypervisor` only works with `/dev/kvm` for virtualization on Linux machines. Hence, we only support Linux machines.
 - The [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) binary installed on the host. More on this in the [Configuration](#Configuration) section.
-- Any recent host (machine you'll run the **chv-restserver** on) Linux kernel >= 2.6.
+- Any recent host (machine you'll run the **arrakis-restserver** on) Linux kernel >= 2.6.
 - Check if virtualization is enabled on the host by running. 
     ```bash
     stat /dev/kvm
@@ -80,7 +101,7 @@ ___
   
   - Install the [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) binary and note down the path of the binary. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/cloud-hypervisor`, you may place it there.
 
-  - Download the prebuilt guest kernel for the VM from [chv-starter-pack-images](https://github.com/abshkbh/chv-starter-pack-images/blob/main/guest/kernel/vmlinux.bin), note down the path. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/vmlinux.bin`, you may place it there.
+  - Download the prebuilt guest kernel for the VM from [arrakis-images](https://github.com/abshkbh/arrakis-images/blob/main/guest/kernel/vmlinux.bin), note down the path. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/vmlinux.bin`, you may place it there.
 
 ---
 
@@ -93,14 +114,14 @@ ___
   All binaries will be placed in `./out`.
 
 - The following binaries are built -
-  - **chv-restserver** - A daemon exposing a REST API to create, manage and interact with cloud-hypervisor based MicroVMs.
-  - **chv-client** - A CLI client to communicate with **chv-restserver**.
-  - **chv-cmdserver** - A daemon to execute shell commands that can be put inside the guest using the [Dockerfile](./resources/scripts/rootfs/Dockerfile) and **chv-rootfsmaker**.
-  - **chv-codeserver** - A daemon to run **python** or **typescript** node that can be put inside the guest using the `Dockerfile` and **chv-rootfsmaker**.
-  - **chv-guestinit** - The init running inside the MicroVM guest.
-  - **chv-guestrootfs-ext4.img** - The rootfs used for the MicroVM guest.
-  - **chv-rootfsmaker** - The program used to convert the [Dockerfile](./resources/scripts/rootfs/Dockerfile) into the guest rootfs (**chv-guestrootfs-ext4.img**).
-  - `gen` - Contains the generated code for both the [cloud-hypervisor API](./api/chv-api.yaml) (used by **chv-restserver**) and [REST server API](./api/server-api.yaml) (used by **chv-client**).  
+  - **arrakis-restserver** - A daemon exposing a REST API to create, manage and interact with cloud-hypervisor based MicroVMs.
+  - **arrakis-client** - A CLI client to communicate with **arrakis-restserver**.
+  - **arrakis-cmdserver** - A daemon to execute shell commands that can be put inside the guest using the [Dockerfile](./resources/scripts/rootfs/Dockerfile) and **arrakis-rootfsmaker**.
+  - **arrakis-codeserver** - A daemon to run **python** or **typescript** node that can be put inside the guest using the `Dockerfile` and **arrakis-rootfsmaker**.
+  - **arrakis-guestinit** - The init running inside the MicroVM guest.
+  - **arrakis-guestrootfs-ext4.img** - The rootfs used for the MicroVM guest.
+  - **arrakis-rootfsmaker** - The program used to convert the [Dockerfile](./resources/scripts/rootfs/Dockerfile) into the guest rootfs (**arrakis-guestrootfs-ext4.img**).
+  - `gen` - Contains the generated code for both the [cloud-hypervisor API](./api/arrakis-api.yaml) (used by **arrakis-restserver**) and [REST server API](./api/server-api.yaml) (used by **arrakis-client**).  
 
 - Clean all binaries.
     ```bash
@@ -130,17 +151,17 @@ ___
 - Configuring services on the host -
   - Host services are configured under the `hostservices` section.
 
-- Configuring **chv-restserver** -
+- Configuring **arrakis-restserver** -
   - The `hostservices` -> `restserver` sub-section is used.
   - **state_dir** - Where each MicroVM's runtime state is stored.
   - **chv_bin** - The path to the **cloud-hypervisor** binary on the host.
   - **kernel** - The path to the kernel to be used for all MicroVMs.
-  - **rootfs** - The path to the rootfs to be used for all MicroVMs. Set to **./out/chv-guestrootfs-ext4.img** by default.
+  - **rootfs** - The path to the rootfs to be used for all MicroVMs. Set to **./out/arrakis-guestrootfs-ext4.img** by default.
 
-- Configuring **chv-client** -
+- Configuring **arrakis-client** -
   - The `hostservices` -> `client` sub-section is used.
-  - **server_host** - The IP at which the **chv-restserver** running.
-  - **server_port** - The port at which the **chv-restserver** is running.
+  - **server_host** - The IP at which the **arrakis-restserver** running.
+  - **server_port** - The port at which the **arrakis-restserver** is running.
 
 - Configuring services inside the guest -
   - Guest services are configured under the `guestservices` section.
@@ -150,9 +171,9 @@ ___
 
 ## Usage
 
-- Before anything we need our `chv-restserver` to start. Start it with -
+- Before anything we need our `arrakis-restserver` to start. Start it with -
   ```bash
-  sudo ./out/chv-restserver
+  sudo ./out/arrakis-restserver
   ```
 - Root access is only needed to configure **iptables** for guest networking. Removing the root dependency is being currently worked on.
 
@@ -160,7 +181,7 @@ ___
 
 - Start a VM named `foo`. It returns metadata about the VM which could be used to interacting with the VM.
   ```bash
-  ./out/chv-client start -n foo
+  ./out/arrakis-client start -n foo
   ```
   
   ```bash
@@ -176,7 +197,7 @@ ___
 
 - Inspecting a VM named `foo`.
   ```bash
-  ./out/chv-client list -n foo
+  ./out/arrakis-client list -n foo
   ```
 
   ```bash
@@ -185,7 +206,7 @@ ___
 
 - List all the VMs.
   ```bash
-  ./out/chv-client list-all
+  ./out/arrakis-client list-all
   ```
 
   ```bash
@@ -194,26 +215,26 @@ ___
 
 - Stop the VM.
   ```bash
-  ./out/chv-client stop -n foo
+  ./out/arrakis-client stop -n foo
   ```
 
 - Destroy the VM.
   ```bash
-  ./out/chv-client destroy -n foo
+  ./out/arrakis-client destroy -n foo
   ```
 
 - Snapshotting and Restoring the VM.
   - We support snapshotting the VM and then using the snapshot to restore the VM. Currently, we restore the VM to use the same IP as the original VM. If you plan to restore the VM on the same host then either stop or destroy the original VM before restoring. In the future this won't be a constraint.
   ```bash
-  ./out/chv-client snapshot -n foo-original -o foo-snapshot
+  ./out/arrakis-client snapshot -n foo-original -o foo-snapshot
   ```
 
   ```bash
-  ./out/chv-client destroy -n foo-original -o foo-snapshot
+  ./out/arrakis-client destroy -n foo-original -o foo-snapshot
   ```
 
   ```bash
-  ./out/chv-client restore -n foo-original --snapshot foo-snapshot
+  ./out/arrakis-client restore -n foo-original --snapshot foo-snapshot
   ```
 
 ---
@@ -228,13 +249,13 @@ ___
 
 ## Contribution
 
-First off, thank you for considering contributing to **chv-starter-pack**! 🎉
+First off, thank you for considering contributing to **arrakis**! 🎉
 
 ### How to Contribute
 
 #### Reporting Bugs
 
-If you find a bug, please [open an issue](https://github.com/yourusername/chv-starter-pack/issues/new) and include:
+If you find a bug, please [open an issue](https://github.com/yourusername/arrakis/issues/new) and include:
 
 - A clear description of the problem
 - Steps to reproduce the issue
@@ -243,7 +264,7 @@ If you find a bug, please [open an issue](https://github.com/yourusername/chv-st
 
 #### Suggesting Features
 
-Have an idea for a new feature? We'd love to hear it! Please [open an issue](https://github.com/yourusername/chv-starter-pack/issues/new) and provide:
+Have an idea for a new feature? We'd love to hear it! Please [open an issue](https://github.com/yourusername/arrakis/issues/new) and provide:
 
 - A clear description of the feature
 - The motivation behind it

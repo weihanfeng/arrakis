@@ -13,9 +13,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 
-	"github.com/abshkbh/chv-starter-pack/out/gen/serverapi"
-	"github.com/abshkbh/chv-starter-pack/pkg/config"
-	"github.com/abshkbh/chv-starter-pack/pkg/server"
+	"github.com/abshkbh/arrakis/out/gen/serverapi"
+	"github.com/abshkbh/arrakis/pkg/config"
+	"github.com/abshkbh/arrakis/pkg/server"
 )
 
 type restServer struct {
@@ -235,7 +235,7 @@ func main() {
 	var configFile string
 
 	app := &cli.App{
-		Name:  "chv-restserver",
+		Name:  "arrakis-restserver",
 		Usage: "A daemon for spawning and managing cloud-hypervisor based microVMs.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{

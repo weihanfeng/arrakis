@@ -13,7 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 
-	"github.com/abshkbh/chv-starter-pack/pkg/config"
+	"github.com/abshkbh/arrakis/pkg/config"
 )
 
 type codeServer struct {
@@ -182,7 +182,7 @@ func main() {
 	var configFile string
 
 	app := &cli.App{
-		Name:  "chv-codeserver",
+		Name:  "arrakis-codeserver",
 		Usage: "A daemon for executing code.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{

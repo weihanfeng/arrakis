@@ -37,7 +37,7 @@ def main():
     # Download files
     files_to_download = [
         {
-            "url": "https://github.com/abshkbh/chv-starter-pack-images/blob/main/guest/kernel/vmlinux.bin",
+            "url": "https://github.com/abshkbh/arrakis-images/blob/main/guest/kernel/vmlinux.bin",
             "destination": f"{bin_dir}/vmlinux.bin",
             "executable": False
         },

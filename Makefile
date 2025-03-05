@@ -3,16 +3,16 @@ API_CLIENT_DIR := out/gen/serverapi
 API_CLIENT_GO_PACKAGE_NAME := serverapi
 CHV_API_DIR := out/gen/chvapi
 CHV_API_GO_PACKAGE_NAME := chvapi
-RESTSERVER_BIN := ${OUT_DIR}/chv-restserver
-CLIENT_BIN := ${OUT_DIR}/chv-client
-GUESTINIT_BIN := ${OUT_DIR}/chv-guestinit
-ROOTFSMAKER_BIN := ${OUT_DIR}/chv-rootfsmaker
-CODESERVER_BIN := ${OUT_DIR}/chv-codeserver
-CMDSERVER_BIN := ${OUT_DIR}/chv-cmdserver
-CMDCLIENT_BIN := ${OUT_DIR}/chv-cmdclient
-GUESTROOTFS_BIN := ${OUT_DIR}/chv-guestrootfs-ext4.img
-VSOCKSERVER_BIN := ${OUT_DIR}/chv-vsockserver
-VSOCKCLIENT_BIN := ${OUT_DIR}/chv-vsockclient
+RESTSERVER_BIN := ${OUT_DIR}/arrakis-restserver
+CLIENT_BIN := ${OUT_DIR}/arrakis-client
+GUESTINIT_BIN := ${OUT_DIR}/arrakis-guestinit
+ROOTFSMAKER_BIN := ${OUT_DIR}/arrakis-rootfsmaker
+CODESERVER_BIN := ${OUT_DIR}/arrakis-codeserver
+CMDSERVER_BIN := ${OUT_DIR}/arrakis-cmdserver
+CMDCLIENT_BIN := ${OUT_DIR}/arrakis-cmdclient
+GUESTROOTFS_BIN := ${OUT_DIR}/arrakis-guestrootfs-ext4.img
+VSOCKSERVER_BIN := ${OUT_DIR}/arrakis-vsockserver
+VSOCKCLIENT_BIN := ${OUT_DIR}/arrakis-vsockclient
 INITRAMFS_SRC_DIR := initramfs
 
 .PHONY: all clean serverapi chvapi initramfs restserver client guestinit rootfsmaker codeserver cmdserver guestrootfs guest vsockclient vsockserver
@@ -22,22 +22,22 @@ clean:
 
 all: serverapi chvapi restserver client guestinit rootfsmaker codeserver cmdserver guestrootfs guest vsockclient vsockserver
 
-serverapi: ${OUT_DIR}/chv-serverapi.stamp
-${OUT_DIR}/chv-serverapi.stamp: ./api/server-api.yaml
+serverapi: ${OUT_DIR}/arrakis-serverapi.stamp
+${OUT_DIR}/arrakis-serverapi.stamp: ./api/server-api.yaml
 	mkdir -p ${API_CLIENT_DIR}
 	openapi-generator-cli generate -i $< -g go -o ${API_CLIENT_DIR} --package-name ${API_CLIENT_GO_PACKAGE_NAME} \
 	--git-user-id abshkbh \
-	--git-repo-id chv-starter-pack/${API_CLIENT_DIR} \
+	--git-repo-id arrakis/${API_CLIENT_DIR} \
     --additional-properties=withGoMod=false \
 	--global-property models,supportingFiles,apis,apiTests=false
 	rm -rf openapitools.json
 
-chvapi: ${OUT_DIR}/chv-chvapi.stamp
-${OUT_DIR}/chv-chvapi.stamp: api/chv-api.yaml
+chvapi: ${OUT_DIR}/arrakis-chvapi.stamp
+${OUT_DIR}/arrakis-chvapi.stamp: api/chv-api.yaml
 	mkdir -p ${API_CLIENT_DIR}
 	openapi-generator-cli generate -i ./api/chv-api.yaml -g go -o ${CHV_API_DIR} --package-name ${CHV_API_GO_PACKAGE_NAME} \
 	--git-user-id abshkbh \
-	--git-repo-id chv-starter-pack/${CHV_API_DIR} \
+	--git-repo-id arrakis/${CHV_API_DIR} \
     --additional-properties=withGoMod=false \
 	--global-property models,supportingFiles,apis,apiTests=false
 	rm -rf openapitools.json
@@ -70,7 +70,7 @@ cmdserver:
 
 guestrootfs: rootfsmaker initramfs cmdserver vsockserver guestinit
 	mkdir -p ${OUT_DIR}
-	sudo ${OUT_DIR}/chv-rootfsmaker create -o ${GUESTROOTFS_BIN} -d ./resources/scripts/rootfs/Dockerfile
+	sudo ${OUT_DIR}/arrakis-rootfsmaker create -o ${GUESTROOTFS_BIN} -d ./resources/scripts/rootfs/Dockerfile
 
 guest: guestinit rootfsmaker codeserver cmdserver guestrootfs
 

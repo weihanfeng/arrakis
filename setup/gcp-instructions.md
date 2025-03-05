@@ -18,7 +18,7 @@
 
     ```bash
     cd $HOME
-    curl -LO "https://raw.githubusercontent.com/abshkbh/chv-starter-pack/btrfs-stateful-debugging/install-deps.sh"
+    curl -LO "https://raw.githubusercontent.com/abshkbh/arrakis/btrfs-stateful-debugging/install-deps.sh"
     chmod +x install-deps.sh
     ./install-deps.sh
     source ~/.bashrc
@@ -27,7 +27,7 @@
 - Build the project
 
     ```bash
-    cd $HOME/projects/chv-starter-pack
+    cd $HOME/projects/arrakis
     setup/install-images.py
     make clean && make all
     ```

@@ -77,29 +77,37 @@ RUN mkdir -p /tmp/vsockserver && chmod 0644 /tmp/vsockserver
 ##############
 RUN ln -s /usr/lib/systemd/system/multi-user.target /etc/systemd/system/default.target
 
-COPY out/chv-guestinit /usr/local/bin/chv-guestinit
-RUN chmod +x /usr/local/bin/chv-guestinit
-COPY resources/chv-guestinit.service /usr/lib/systemd/system/chv-guestinit.service
-RUN ln -s /usr/lib/systemd/system/chv-guestinit.service /etc/systemd/system/multi-user.target.wants/chv-guestinit.service
+ARG OUT_DIR=out
+ARG RESOURCES_DIR=resources
 
-COPY out/chv-cmdserver /usr/local/bin/chv-cmdserver
-RUN chmod +x /usr/local/bin/chv-cmdserver
-COPY resources/chv-cmdserver.service /usr/lib/systemd/system/chv-cmdserver.service
-RUN ln -s /usr/lib/systemd/system/chv-cmdserver.service /etc/systemd/system/multi-user.target.wants/chv-cmdserver.service
+ARG GUESTINIT_BIN=arrakis-guestinit
+COPY ${OUT_DIR}/${GUESTINIT_BIN} /usr/local/bin/${GUESTINIT_BIN}
+RUN chmod +x /usr/local/bin/${GUESTINIT_BIN}
+COPY ${RESOURCES_DIR}/${GUESTINIT_BIN}.service /usr/lib/systemd/system/${GUESTINIT_BIN}.service
+RUN ln -s /usr/lib/systemd/system/${GUESTINIT_BIN}.service /etc/systemd/system/multi-user.target.wants/${GUESTINIT_BIN}.service
 
-COPY resources/chv-vncserver.service /usr/lib/systemd/system/chv-vncserver.service
-RUN ln -s /usr/lib/systemd/system/chv-vncserver.service /etc/systemd/system/multi-user.target.wants/chv-vncserver.service
+ARG CMDSERVER_BIN=arrakis-cmdserver
+COPY ${OUT_DIR}/${CMDSERVER_BIN} /usr/local/bin/${CMDSERVER_BIN}
+RUN chmod +x /usr/local/bin/${CMDSERVER_BIN}
+COPY ${RESOURCES_DIR}/${CMDSERVER_BIN}.service /usr/lib/systemd/system/${CMDSERVER_BIN}.service
+RUN ln -s /usr/lib/systemd/system/${CMDSERVER_BIN}.service /etc/systemd/system/multi-user.target.wants/${CMDSERVER_BIN}.service
 
-COPY out/chv-vsockserver /usr/local/bin/chv-vsockserver
-RUN chmod +x /usr/local/bin/chv-vsockserver
-COPY resources/chv-vsockserver.service /usr/lib/systemd/system/chv-vsockserver.service
-RUN ln -s /usr/lib/systemd/system/chv-vsockserver.service /etc/systemd/system/multi-user.target.wants/chv-vsockserver.service
+ARG VNCSERVER_BIN=arrakis-vncserver
+COPY ${RESOURCES_DIR}/${VNCSERVER_BIN}.service /usr/lib/systemd/system/${VNCSERVER_BIN}.service
+RUN ln -s /usr/lib/systemd/system/${VNCSERVER_BIN}.service /etc/systemd/system/multi-user.target.wants/${VNCSERVER_BIN}.service
+
+ARG VSOCKSERVER_BIN=arrakis-vsockserver
+COPY ${OUT_DIR}/${VSOCKSERVER_BIN} /usr/local/bin/${VSOCKSERVER_BIN}
+RUN chmod +x /usr/local/bin/${VSOCKSERVER_BIN}
+COPY ${RESOURCES_DIR}/${VSOCKSERVER_BIN}.service /usr/lib/systemd/system/${VSOCKSERVER_BIN}.service
+RUN ln -s /usr/lib/systemd/system/${VSOCKSERVER_BIN}.service /etc/systemd/system/multi-user.target.wants/${VSOCKSERVER_BIN}.service
 
 # Prevent the renaming service that will change "eth0" to "ens*". If not done our init service
 # inside the guest has race conditions while configuring the network.
 RUN ln -s /dev/null /etc/systemd/network/99-default.link
 ##############
 
+# Install Chrome.
 RUN wget -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
     # Any failure here will be fixed by the `install -f` command below.
     dpkg -i /tmp/google-chrome-stable_current_amd64.deb || true && \

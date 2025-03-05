@@ -64,11 +64,11 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plug
 
 echo "Cloning project..."
 mkdir -p "$HOME/projects"
-if [ -d "$HOME/projects/chv-starter-pack" ]; then
-  echo "chv-starter-pack already exists. Skipping clone."
+if [ -d "$HOME/projects/arrakis" ]; then
+  echo "arrakis already exists. Skipping clone."
 else
   cd "$HOME/projects"
-  git clone https://github.com/abshkbh/chv-starter-pack.git
+  git clone https://github.com/abshkbh/arrakis.git
   ./install-images.py
 fi
 cd "$HOME"

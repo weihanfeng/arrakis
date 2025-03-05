@@ -1,4 +1,4 @@
-module github.com/abshkbh/chv-starter-pack
+module github.com/abshkbh/arrakis
 
 go 1.23.1
 
