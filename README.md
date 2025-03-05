@@ -8,7 +8,9 @@
 
 ## Introduction ##
 
-AI agents can generate malicious or buggy code that can attack the host system its run on. These agents can also have elaborate multi-step plans to achieve their goals and benefit from the ability to backtrack to intermediate states.
+AI agents can generate malicious or buggy code that can attack the host system its run on. 
+
+Many agents also have elaborate multi-step plans to achieve their goals and benefit from the ability to backtrack to intermediate states.
 
 **Arrakis** provides a **fully customizable** and **self-hosted** solution to spawn and manage Sandboxes for code execution and computer use. It has out-of-the box support for backtracking via **snapshot-and-restore**.
 
