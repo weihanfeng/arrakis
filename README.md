@@ -1,5 +1,7 @@
 # Arrakis
 
+![Arrakis Logo](docs/images/arrakis-logo.png)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 ## Introduction ##
