@@ -40,6 +40,8 @@ ___
 
 ## Architecture And Features
 
+![High Level Architecture Diagram](./docs/images/architecture.png)
+
 `arrakis` includes the following services and features
 
 - **REST API**
