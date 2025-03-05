@@ -14,7 +14,7 @@
 
 - Supports **snapshot-and-restore** out of the box i.e. AI Agents can do some work, snapshot a sandbox, and later backtrack to the exact previous state by restoring the snapshot. This means any processes spawned, files modified etc. will be restored as is inside the sandbox.Useful for Monte Carlo Tree Search based agents or explainability of elaborate agent execution flows.
 
-- Secure by design, each sandbox [runs in a MicroVM](#architecture).
+- Secure by design, each sandbox [runs in a MicroVM](#architecture-and-features).
 
 ---
 
