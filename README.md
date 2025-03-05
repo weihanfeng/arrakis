@@ -62,7 +62,7 @@ ___
     - [Code](./cmd/client)
 
 - **Python SDK**
-  - TODO.
+  - Completed, todo on official shipping and linking here.
 
 - **Security**
   - Each sandbox runs in a MicroVM.
