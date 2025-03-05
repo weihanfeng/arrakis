@@ -40,7 +40,7 @@ ___
 
 ## Architecture And Features
 
-![High Level Architecture Diagram](./docs/images/architecture.png)
+![High Level Architecture Diagram](docs/images/high-level-architecture-arrakis.png)
 
 `arrakis` includes the following services and features
 
