@@ -16,8 +16,12 @@ RUN usermod -aG adm elara
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Packages required for Agent-S https://github.com/simular-ai/Agent-S.
+ARG AGENT_S_PACKAGES="python3-tk gnome-screenshot cmake libcairo2-dev python3-gi python3-gi-cairo gir1.2-gtk-4.0 libgirepository1.0-dev gir1.2-atspi-2.0"
+
 # Update and install common utilities.
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && \
+    apt-get install -y ${AGENT_S_PACKAGES} \
     init \
     systemd \
     ncat \
