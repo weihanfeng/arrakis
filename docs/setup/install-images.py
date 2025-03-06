@@ -45,6 +45,11 @@ def main():
             "url": "https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v44.0/cloud-hypervisor-static",
             "destination": f"{bin_dir}/cloud-hypervisor",
             "executable": True
+        },
+        {
+            "url": "https://github.com/abshkbh/arrakis-images/busybox",
+            "destination": f"{bin_dir}/busybox",
+            "executable": True
         }
     ]
 
