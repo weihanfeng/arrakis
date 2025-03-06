@@ -47,7 +47,7 @@ def main():
             "executable": True
         },
         {
-            "url": "https://github.com/abshkbh/arrakis-images/busybox",
+            "url": "https://github.com/abshkbh/arrakis-images/blob/main/busybox",
             "destination": f"{bin_dir}/busybox",
             "executable": True
         }
