@@ -4,7 +4,7 @@
 
 # Arrakis
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](./LICENSE)
 
 ## Introduction ##
 
@@ -43,6 +43,7 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
     - [Suggesting Features](#suggesting-features)
     - [Pull Requests](#pull-requests)
 - [License](#license)
+- [Contributing](#contributing)
 
 ___
 
@@ -259,52 +260,27 @@ ___
 
 ## Contribution
 
-First off, thank you for considering contributing to **arrakis**! 🎉
+Thank you for considering contributing to **arrakis**! 🎉
 
-### How to Contribute
+Feel free to open a PR. A detailed contribution guide is going to be available soon.
 
-#### Reporting Bugs
+## Legal Info
 
-If you find a bug, please [open an issue](https://github.com/yourusername/arrakis/issues/new) and include:
+### Contributor License Agreement
 
-- A clear description of the problem
-- Steps to reproduce the issue
-- Expected vs. actual behavior
-- Any relevant logs or screenshots
+In order for us to accept patches and other contributions from you, you need to adopt our Arrakis Contributor License Agreement (the "**CLA**"). Please drop a line at abshkbh@gmail.com to start this process.
 
-#### Suggesting Features
+Arrakis uses a tool called CLA Assistant to help us keep track of the CLA status of contributors. CLA Assistant will post a comment to your pull request indicating whether you have signed the CLA or not. If you have not signed the CLA, you will need to do so before we can accept your contribution. Signing the CLA would be one-time process, is valid for all future contributions to Arrakis, and can be done in under a minute by signing in with your GitHub account.
 
-Have an idea for a new feature? We'd love to hear it! Please [open an issue](https://github.com/yourusername/arrakis/issues/new) and provide:
 
-- A clear description of the feature
-- The motivation behind it
-- Potential benefits
+### License
 
-#### Pull Requests
-
-1. **Fork the Repository**
-
-2. **Create a Feature Branch**
-    ```bash
-    git checkout -b feature/your-feature-name
-    ```
-
-3. **Commit Your Changes**
-    ```bash
-    git commit -m "Add feature: your feature description"
-    ```
-
-4. **Push to Your Fork**
-    ```bash
-    git push origin feature/your-feature-name
-    ```
-
-5. **Open a Pull Request**
+By contributing to Arrakis, you agree that your contributions will be licensed under the [GNU Affero General Public License v3.0](LICENSE) and as commercial software.
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](./LICENSE).
+This project is licensed under the [GNU Affero General Public License v3.0](./LICENSE). For commercial licensing, please drop a line at abshkbh@gmail.com.
 
 ---
