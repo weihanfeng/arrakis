@@ -993,8 +993,11 @@ func (v *vm) restore(
 
 	resp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to restore from snapshot: %d: %s: %w", resp.StatusCode, string(body), err)
+		if resp != nil {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to restore from snapshot: %d: %s: %w", resp.StatusCode, string(body), err)
+		}
+		return fmt.Errorf("failed to restore from snapshot: %w", err)
 	}
 	if resp.StatusCode != 204 {
 		return fmt.Errorf("failed to restore from snapshot. bad status: %v", resp)
@@ -1427,8 +1430,11 @@ func (s *Server) SnapshotVM(ctx context.Context, vmName string, snapshotId strin
 	snapshotReq = snapshotReq.VmSnapshotConfig(snapshotConfig)
 	resp, err = snapshotReq.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to create snapshot: %d: %s: %w", resp.StatusCode, string(body), err)
+		if resp != nil {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("failed to create snapshot: %d: %s: %w", resp.StatusCode, string(body), err)
+		}
+		return nil, fmt.Errorf("failed to create snapshot: %w", err)
 	}
 	if resp.StatusCode != 204 {
 		body, _ := io.ReadAll(resp.Body)

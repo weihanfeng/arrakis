@@ -29,8 +29,11 @@ func stopVM(vmName string) error {
 
 	_, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(httpResp.Body)
-		return fmt.Errorf("failed to stop VM: error: %s code: %v", string(body), err)
+		if httpResp != nil {
+			body, _ := io.ReadAll(httpResp.Body)
+			return fmt.Errorf("failed to stop VM: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to stop VM: %v", err)
 	}
 
 	log.Infof("successfully stopped VM: %s", vmName)
@@ -42,8 +45,11 @@ func destroyVM(vmName string) error {
 		DefaultAPI.
 		VmsNameDelete(context.Background(), vmName).Execute()
 	if err != nil {
-		body, _ := io.ReadAll(http_resp.Body)
-		return fmt.Errorf("failed to destroy VM: error: %s code: %v", string(body), err)
+		if http_resp != nil {
+			body, _ := io.ReadAll(http_resp.Body)
+			return fmt.Errorf("failed to destroy VM: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to destroy VM: %v", err)
 	}
 
 	log.Infof("successfully destroyed VM: %s", vmName)
@@ -53,8 +59,11 @@ func destroyVM(vmName string) error {
 func destroyAllVMs() error {
 	_, http_resp, err := apiClient.DefaultAPI.VmsDelete(context.Background()).Execute()
 	if err != nil {
-		body, _ := io.ReadAll(http_resp.Body)
-		return fmt.Errorf("failed to destroy all VMs: error: %s code: %v", string(body), err)
+		if http_resp != nil {
+			body, _ := io.ReadAll(http_resp.Body)
+			return fmt.Errorf("failed to destroy all VMs: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to destroy all VMs: %v", err)
 	}
 
 	log.Infof("destroyed all VMs")
@@ -88,8 +97,11 @@ func startVM(
 		VmsPost(context.Background()).
 		StartVMRequest(*startVMRequest).Execute()
 	if err != nil {
-		body, _ := io.ReadAll(http_resp.Body)
-		return fmt.Errorf("failed to start VM: error: %s code: %v", string(body), err)
+		if http_resp != nil {
+			body, _ := io.ReadAll(http_resp.Body)
+			return fmt.Errorf("failed to start VM: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to start VM: %v", err)
 	}
 
 	resp_bytes, err := resp.MarshalJSON()
@@ -103,8 +115,11 @@ func startVM(
 func listAllVMs() error {
 	resp, http_resp, err := apiClient.DefaultAPI.VmsGet(context.Background()).Execute()
 	if err != nil {
-		body, _ := io.ReadAll(http_resp.Body)
-		return fmt.Errorf("failed to list all VMs: error: %s code: %v", string(body), err)
+		if http_resp != nil {
+			body, _ := io.ReadAll(http_resp.Body)
+			return fmt.Errorf("failed to list all VMs: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to list all VMs: %v", err)
 	}
 
 	// Format output to better show port forwards with descriptions
@@ -176,8 +191,11 @@ func snapshotVM(vmName string, snapshotId string) error {
 
 	resp, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(httpResp.Body)
-		return fmt.Errorf("failed to create snapshot: error: %s code: %v", string(body), err)
+		if httpResp != nil {
+			body, _ := io.ReadAll(httpResp.Body)
+			return fmt.Errorf("failed to create snapshot: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to create snapshot: %v", err)
 	}
 	log.Infof("successfully created snapshot for VM %s with ID %s", vmName, resp.GetSnapshotId())
 	return nil
@@ -194,8 +212,11 @@ func pauseVM(vmName string) error {
 	})
 	_, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(httpResp.Body)
-		return fmt.Errorf("failed to pause VM: error: %s code: %v", string(body), err)
+		if httpResp != nil {
+			body, _ := io.ReadAll(httpResp.Body)
+			return fmt.Errorf("failed to pause VM: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to pause VM: %v", err)
 	}
 	log.Infof("successfully paused VM: %s", vmName)
 	return nil
@@ -208,8 +229,11 @@ func resumeVM(vmName string) error {
 	})
 	_, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(httpResp.Body)
-		return fmt.Errorf("failed to resume VM: error: %s code: %v", string(body), err)
+		if httpResp != nil {
+			body, _ := io.ReadAll(httpResp.Body)
+			return fmt.Errorf("failed to resume VM: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to resume VM: %v", err)
 	}
 	log.Infof("successfully resumed VM: %s", vmName)
 	return nil
@@ -245,8 +269,11 @@ func uploadFiles(vmName string, fileSpecs []string) error {
 
 	_, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(httpResp.Body)
-		return fmt.Errorf("failed to upload files: error: %s code: %v", string(body), err)
+		if httpResp != nil {
+			body, _ := io.ReadAll(httpResp.Body)
+			return fmt.Errorf("failed to upload files: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to upload files: %v", err)
 	}
 
 	log.Infof("successfully uploaded %d files to VM: %s", len(fileSpecs)/2, vmName)
@@ -261,8 +288,11 @@ func runCommand(vmName string, cmd string) error {
 
 	resp, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(httpResp.Body)
-		return fmt.Errorf("failed to run command: error: %s code: %v", string(body), err)
+		if httpResp != nil {
+			body, _ := io.ReadAll(httpResp.Body)
+			return fmt.Errorf("failed to run command: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to run command: %v", err)
 	}
 
 	if resp.GetError() != "" {
@@ -280,8 +310,11 @@ func downloadFiles(vmName string, paths []string) error {
 
 	resp, httpResp, err := req.Execute()
 	if err != nil {
-		body, _ := io.ReadAll(httpResp.Body)
-		return fmt.Errorf("failed to download files: error: %s code: %v", string(body), err)
+		if httpResp != nil {
+			body, _ := io.ReadAll(httpResp.Body)
+			return fmt.Errorf("failed to download files: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to download files: %v", err)
 	}
 
 	for _, file := range resp.GetFiles() {
@@ -303,8 +336,11 @@ func downloadFiles(vmName string, paths []string) error {
 func listVM(vmName string) error {
 	resp, http_resp, err := apiClient.DefaultAPI.VmsNameGet(context.Background(), vmName).Execute()
 	if err != nil {
-		body, _ := io.ReadAll(http_resp.Body)
-		return fmt.Errorf("failed to get VM info: error: %s code: %v", string(body), err)
+		if http_resp != nil {
+			body, _ := io.ReadAll(http_resp.Body)
+			return fmt.Errorf("failed to get VM info: error: %s code: %v", string(body), err)
+		}
+		return fmt.Errorf("failed to get VM info: %v", err)
 	}
 
 	fmt.Printf("VM Name: %s\n", resp.GetVmName())
