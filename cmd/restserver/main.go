@@ -18,26 +18,52 @@ import (
 	"github.com/abshkbh/arrakis/pkg/server"
 )
 
+// sendErrorResponse sends a standardized error response to the client.
+func sendErrorResponse(w http.ResponseWriter, statusCode int, message string) {
+	resp := serverapi.ErrorResponse{
+		Error: &serverapi.ErrorResponseError{
+			Message: &message,
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(resp)
+}
+
 type restServer struct {
 	vmServer *server.Server
 }
 
 // Implement handler functions
 func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "startVM")
 	var req serverapi.StartVMRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		logger.WithError(err).Error("Invalid request body")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			fmt.Sprintf("Invalid request format: %v", err))
 		return
 	}
 
 	if req.GetVmName() == "" {
-		http.Error(w, "Empty vm name", http.StatusBadRequest)
+		logger.Error("Empty vm name")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			"Empty vm name")
 		return
 	}
 
+	vmName := req.GetVmName()
 	resp, err := s.vmServer.StartVM(r.Context(), &req)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to start VM: %v", err), http.StatusInternalServerError)
+		logger.WithField("vmName", vmName).WithError(err).Error("Failed to start VM")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to start VM: %v", err))
 		return
 	}
 
@@ -46,6 +72,7 @@ func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) destroyVM(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "destroyVM")
 	vars := mux.Vars(r)
 	vmName := vars["name"]
 
@@ -56,7 +83,11 @@ func (s *restServer) destroyVM(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.vmServer.DestroyVM(r.Context(), &req)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to destroy VM: %v", err), http.StatusInternalServerError)
+		logger.WithField("vmName", vmName).WithError(err).Error("Failed to destroy VM")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to destroy VM: %v", err))
 		return
 	}
 
@@ -65,9 +96,14 @@ func (s *restServer) destroyVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) destroyAllVMs(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "destroyAllVMs")
 	resp, err := s.vmServer.DestroyAllVMs(r.Context())
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to destroy all VMs: %v", err), http.StatusInternalServerError)
+		logger.WithError(err).Error("Failed to destroy all VMs")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to destroy all VMs: %v", err))
 		return
 	}
 
@@ -76,9 +112,14 @@ func (s *restServer) destroyAllVMs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) listAllVMs(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "listAllVMs")
 	resp, err := s.vmServer.ListAllVMs(r.Context())
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to list all VMs: %v", err), http.StatusInternalServerError)
+		logger.WithError(err).Error("Failed to list all VMs")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to list all VMs: %v", err))
 		return
 	}
 
@@ -87,11 +128,16 @@ func (s *restServer) listAllVMs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) listVM(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "listVM")
 	vars := mux.Vars(r)
 	vmName := vars["name"]
 	resp, err := s.vmServer.ListVM(r.Context(), vmName)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to list VM: %v", err), http.StatusInternalServerError)
+		logger.WithField("vmName", vmName).WithError(err).Error("Failed to list VM")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to list VM: %v", err))
 		return
 	}
 
@@ -100,6 +146,7 @@ func (s *restServer) listVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) snapshotVM(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "snapshotVM")
 	vars := mux.Vars(r)
 	vmName := vars["name"]
 
@@ -107,13 +154,24 @@ func (s *restServer) snapshotVM(w http.ResponseWriter, r *http.Request) {
 		SnapshotId string `json:"snapshotId,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		logger.WithField("vmName", vmName).WithError(err).Error("Invalid request body")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			fmt.Sprintf("Invalid request format: %v", err))
 		return
 	}
 
 	resp, err := s.vmServer.SnapshotVM(r.Context(), vmName, req.SnapshotId)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create snapshot: %v", err), http.StatusInternalServerError)
+		logger.WithFields(log.Fields{
+			"vmName":     vmName,
+			"snapshotId": req.SnapshotId,
+		}).WithError(err).Error("Failed to create snapshot")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to create snapshot: %v", err))
 		return
 	}
 
@@ -122,18 +180,30 @@ func (s *restServer) snapshotVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "updateVMState")
 	vars := mux.Vars(r)
 	vmName := vars["name"]
 
 	var req serverapi.VmsNamePatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		logger.WithField("vmName", vmName).WithError(err).Error("Invalid request body")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			fmt.Sprintf("Invalid request format: %v", err))
 		return
 	}
 
 	status := req.GetStatus()
 	if status != "stopped" && status != "paused" && status != "resume" {
-		http.Error(w, "Status must be either 'stopped' or 'paused'", http.StatusBadRequest)
+		logger.WithFields(log.Fields{
+			"vmName": vmName,
+			"status": status,
+		}).Error("Invalid status value")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			fmt.Sprintf("Invalid status value: %s", status))
 		return
 	}
 
@@ -152,7 +222,14 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to update VM state: %v", err), http.StatusInternalServerError)
+		logger.WithFields(log.Fields{
+			"vmName": vmName,
+			"status": status,
+		}).WithError(err).Error("Failed to update VM state")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to change VM state to '%s': %v", status, err))
 		return
 	}
 
@@ -161,23 +238,40 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) vmCommand(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "vmCommand")
 	vars := mux.Vars(r)
 	vmName := vars["name"]
 
 	var req serverapi.VmCommandRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		logger.WithField("vmName", vmName).WithError(err).Error("Invalid request body")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			fmt.Sprintf("Invalid request format: %v", err))
 		return
 	}
 
 	if req.GetCmd() == "" {
-		http.Error(w, "Command cannot be empty", http.StatusBadRequest)
+		logger.WithField("vmName", vmName).Error("Command cannot be empty")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			"Command cannot be empty")
 		return
 	}
 
-	resp, err := s.vmServer.VMCommand(r.Context(), vmName, req.GetCmd())
+	cmd := req.GetCmd()
+	resp, err := s.vmServer.VMCommand(r.Context(), vmName, cmd)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to execute command: %v", err), http.StatusInternalServerError)
+		logger.WithFields(log.Fields{
+			"vmName": vmName,
+			"cmd":    cmd,
+		}).WithError(err).Error("Failed to execute command")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to execute command: %v", err))
 		return
 	}
 
@@ -186,23 +280,40 @@ func (s *restServer) vmCommand(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) vmFileUpload(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "vmFileUpload")
 	vars := mux.Vars(r)
 	vmName := vars["name"]
 
 	var req serverapi.VmFileUploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		logger.WithField("vmName", vmName).WithError(err).Error("Invalid request body")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			fmt.Sprintf("Invalid request format: %v", err))
 		return
 	}
 
 	if len(req.GetFiles()) == 0 {
-		http.Error(w, "No files provided", http.StatusBadRequest)
+		logger.WithField("vmName", vmName).Error("No files provided")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			"No files provided for upload")
 		return
 	}
 
-	resp, err := s.vmServer.VMFileUpload(r.Context(), vmName, req.GetFiles())
+	files := req.GetFiles()
+	resp, err := s.vmServer.VMFileUpload(r.Context(), vmName, files)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to upload files: %v", err), http.StatusInternalServerError)
+		logger.WithFields(log.Fields{
+			"vmName":    vmName,
+			"fileCount": len(files),
+		}).WithError(err).Error("Failed to upload files")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to upload files: %v", err))
 		return
 	}
 
@@ -211,18 +322,30 @@ func (s *restServer) vmFileUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *restServer) vmFileDownload(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithField("api", "vmFileDownload")
 	vars := mux.Vars(r)
 	vmName := vars["name"]
 
 	paths := r.URL.Query().Get("paths")
 	if paths == "" {
-		http.Error(w, "Missing 'paths' query parameter", http.StatusBadRequest)
+		logger.WithField("vmName", vmName).Error("Missing 'paths' query parameter")
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			"Missing 'paths' query parameter")
 		return
 	}
 
 	resp, err := s.vmServer.VMFileDownload(r.Context(), vmName, paths)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to download files: %v", err), http.StatusInternalServerError)
+		logger.WithFields(log.Fields{
+			"vmName": vmName,
+			"paths":  paths,
+		}).WithError(err).Error("Failed to download files")
+		sendErrorResponse(
+			w,
+			http.StatusInternalServerError,
+			fmt.Sprintf("Failed to download files: %v", err))
 		return
 	}
 

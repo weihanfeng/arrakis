@@ -24,6 +24,10 @@ paths:
                 $ref: '#/components/schemas/ListAllVMsResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       summary: Start a VM
       requestBody:
@@ -41,8 +45,16 @@ paths:
                 $ref: '#/components/schemas/StartVMResponse'
         '400':
           description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       summary: Destroy all VMs
       responses:
@@ -54,6 +66,10 @@ paths:
                 $ref: '#/components/schemas/DestroyAllVMsResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /vms/{name}:
     get:
       summary: Get details of a specific VM
@@ -73,6 +89,10 @@ paths:
                 $ref: '#/components/schemas/ListVMResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     patch:
       summary: Update the state of a specific VM
       parameters:
@@ -102,10 +122,22 @@ paths:
                 $ref: '#/components/schemas/VMResponse'
         '400':
           description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: VM not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
       summary: Destroy a specific VM
       parameters:
@@ -124,8 +156,16 @@ paths:
                 $ref: '#/components/schemas/VMResponse'
         '404':
           description: VM not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /vms/{name}/snapshots:
     post:
       summary: Create a snapshot of a VM
@@ -155,10 +195,22 @@ paths:
                 $ref: '#/components/schemas/VMSnapshotResponse'
         '400':
           description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: VM not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /vms/{name}/cmd:
     post:
       summary: Execute command in VM
@@ -184,10 +236,22 @@ paths:
                 $ref: '#/components/schemas/VmCommandResponse'
         '400':
           description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: VM not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /vms/{name}/files:
     post:
       summary: Upload files to VM
@@ -213,10 +277,22 @@ paths:
                 $ref: '#/components/schemas/VmFileUploadResponse'
         '400':
           description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: VM not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     get:
       summary: Download files from VM
       parameters:
@@ -241,12 +317,33 @@ paths:
                 $ref: '#/components/schemas/VmFileDownloadResponse'
         '400':
           description: Missing paths parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: VM not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              description: Error message describing what went wrong
     StartVMRequest:
       type: object
       properties:
