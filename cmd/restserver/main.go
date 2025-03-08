@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
@@ -37,6 +38,8 @@ type restServer struct {
 // Implement handler functions
 func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithField("api", "startVM")
+	startTime := time.Now()
+
 	var req serverapi.StartVMRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.WithError(err).Error("Invalid request body")
@@ -67,6 +70,11 @@ func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	elapsedTime := time.Since(startTime)
+	logger.WithFields(log.Fields{
+		"vmName":      vmName,
+		"startupTime": elapsedTime.String(),
+	}).Info("VM started successfully")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }

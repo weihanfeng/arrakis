@@ -83,6 +83,9 @@ const (
 	minGuestMemoryMB          = 1024
 	maxGuestMemoryMB          = 32768
 	defaultGuestMemPercentage = 50
+
+	cmdServerReadyTimeout    = 1 * time.Minute
+	cmdServerReadyRetryDelay = 10 * time.Millisecond
 )
 
 type portForward struct {
@@ -1175,7 +1178,13 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		cleanup.Release()
 	}
 
-	logger.Infof("VM started")
+	logger.WithField("vmIP", vm.ip.IP.String()).Infof("Waiting for cmd server to be ready")
+	err := waitForCmdServerReady(ctx, vm.ip.IP.String())
+	if err != nil {
+		logger.WithError(err).Warnf("command server not ready")
+	}
+	logger.Infof("VM ready")
+
 	return &serverapi.StartVMResponse{
 		VmName:        serverapi.PtrString(vmName),
 		Ip:            serverapi.PtrString(vm.ip.String()),
@@ -1779,4 +1788,39 @@ func parseTapDeviceId(tapDeviceName string) (int32, error) {
 	}
 
 	return int32(id), nil
+}
+
+// waitForCmdServerReady checks if the command server in the guest VM is ready by sending a GET
+// request to it. Returns nil if the command server is ready, or an error if the timeout is reached.
+func waitForCmdServerReady(ctx context.Context, vmIP string) error {
+	ctx, cancel := context.WithTimeout(ctx, cmdServerReadyTimeout)
+	defer cancel()
+
+	cmdServerURL := fmt.Sprintf("http://%s:4031/", vmIP)
+	client := &http.Client{
+		Timeout: 5 * time.Second, // Short timeout for individual requests
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return
+			default:
+				resp, err := client.Get(cmdServerURL)
+				if err == nil && resp.StatusCode == http.StatusOK {
+					resp.Body.Close()
+					errCh <- nil
+					return
+				}
+				if resp != nil {
+					resp.Body.Close()
+				}
+				time.Sleep(cmdServerReadyRetryDelay)
+			}
+		}
+	}()
+	return <-errCh
 }
