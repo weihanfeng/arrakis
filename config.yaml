@@ -16,7 +16,7 @@ hostservices:
       - port: "5901"
         description: "gui"
     stateful_size_in_mb: "2048"
-    guest_mem_percentage: "50"
+    guest_mem_percentage: "25"
   client:
     server_host: "127.0.0.1"
     server_port: "7000"
