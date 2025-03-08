@@ -38,12 +38,10 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
 - [Usage](#usage)
 - [Ongoing Work](#ongoing-work)
 - [Contribution](#contribution)
-  - [How to Contribute](#how-to-contribute)
-    - [Reporting Bugs](#reporting-bugs)
-    - [Suggesting Features](#suggesting-features)
-    - [Pull Requests](#pull-requests)
+  - [Legal Info](#legal-info)
+    - [Contributor License Agreement](#contributor-license-agreement)
+    - [License](#license)
 - [License](#license)
-- [Contributing](#contributing)
 
 ___
 
