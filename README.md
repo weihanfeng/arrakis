@@ -333,7 +333,9 @@ ___
 
 ## Ongoing Work
 
-- Less than 500ms sandbox startup time.
+- Reduce sandbox startup time to less than 500 ms.
+
+- Making existing coding agents work with Arrakis.
 
 ---
 
