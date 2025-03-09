@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/images/arrakis-logo.png" alt="Arrakis Logo" width="300">
-</p>
+![Arrakis Logo](docs/images/arrakis-logo.png)
 
 # Arrakis
 
