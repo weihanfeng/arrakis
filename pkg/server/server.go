@@ -1101,12 +1101,21 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 	if vmName == "" {
 		return nil, fmt.Errorf("vmName is required")
 	}
+	logger := log.WithField("vmName", vmName)
 
 	if snapshotId := req.GetSnapshotId(); snapshotId != "" {
+		logger.WithField("snapshotId", snapshotId).Infof("Restoring VM")
 		vm, err := s.restoreVM(ctx, vmName, snapshotId)
 		if err != nil {
 			return nil, fmt.Errorf("failed to restore VM from snapshot: %w", err)
 		}
+
+		// Only mark the VM as ready when we can do things inside the sandbox via the API.
+		logger.WithField("vmIP", vm.ip.IP.String()).Infof("Waiting for cmd server to be ready")
+		if err := waitForCmdServerReady(ctx, vm.ip.IP.String()); err != nil {
+			logger.WithError(err).Warnf("command server not ready")
+		}
+		logger.Infof("VM ready")
 
 		return &serverapi.StartVMResponse{
 			VmName:        serverapi.PtrString(vmName),
@@ -1120,8 +1129,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 	kernelPath := req.GetKernel()
 	rootfsPath := req.GetRootfs()
 	initramfsPath := req.GetInitramfs()
-	logger := log.WithField("vmName", vmName)
-	logger.Infof("received request to start VM")
+	logger.Infof("Starting VM")
 
 	// If not specified, set kernel and rootfs to defaults.
 	if kernelPath == "" {
@@ -1178,6 +1186,7 @@ func (s *Server) StartVM(ctx context.Context, req *serverapi.StartVMRequest) (*s
 		cleanup.Release()
 	}
 
+	// Only mark the VM as ready when we can do things inside the sandbox via the API.
 	logger.WithField("vmIP", vm.ip.IP.String()).Infof("Waiting for cmd server to be ready")
 	err := waitForCmdServerReady(ctx, vm.ip.IP.String())
 	if err != nil {
