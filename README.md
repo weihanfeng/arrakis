@@ -29,7 +29,8 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
 ## Table of Contents
 
 - [Introduction](#introduction)
-- [Quickstart - SDK](#quickstart-sdk)
+- [Quickstart - SDK](#quickstart---sdk)
+- [Quickstart - GUI For Computer Use](#quickstart---gui-for-computer-use)
 - [Architecture And Features](#architecture-and-features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
@@ -90,6 +91,41 @@ Arrakis comes with a Python SDK [py-arrakis](https://pypi.org/project/py-arrakis
   # result["output"] should be "test data before snapshot".
   ```
 
+___
+
+## Quickstart - GUI For Computer Use
+
+![Arrakis GUI](docs/images/arrakis-gui.png)
+
+- Every sandbox comes with a VNC server running at boot. It also comes with Chrome pre-installed.
+
+- Arrakis also handles port forwarding to expose the VNC server via a port on the dev server running `arrakis-restserver`.
+
+- Start a sandbox and get metadata about the sandbox including the VNC connection details.
+
+  ```python
+  # Replace this with the ip:port where `arrakis-restserver` is running.
+  sandbox_manager = SandboxManager('http://127.0.0.1:7000')
+  sb = sandbox_manager.start_sandbox('agent-sandbox')
+  print(sb.info())
+  ```
+
+- We can get the VNC connection details from the `port_forwards` field in the response. The VNC server is represented by the description `gui` in a port forward entry. We will use the `host_port` field to connect to the VNC server.
+  ```bash
+  {
+    'name': 'agent-sandbox',
+    'status': 'RUNNING',
+    'ip': '10.20.1.2/24',
+    'tap_device_name': 'tap0',
+    'port_forwards': [{'host_port': '3000', 'guest_port': '5901', 'description': 'gui'}]
+  }
+  ```
+
+- Use any [VNC client](https://github.com/novnc/noVNC) to connect to the VNC server to access the GUI.
+  ```bash
+  # We see port 3000 is the host port forwarded to the VNC server running inside the sandbox.
+  ./utils/novnc_proxy --vnc <dev-server-ip>:3000
+  ```
 ___
 
 ## Architecture And Features
