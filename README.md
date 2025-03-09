@@ -27,6 +27,7 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
 ## Table of Contents
 
 - [Introduction](#introduction)
+- [Demo](#demo)
 - [Quickstart - SDK](#quickstart---sdk)
 - [Quickstart - GUI For Computer Use](#quickstart---gui-for-computer-use)
 - [Architecture And Features](#architecture-and-features)
@@ -44,6 +45,14 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
 - [License](#license)
 
 ___
+
+## Demo
+
+Watch a quick demo of Arrakis in action:
+
+[![Arrakis Demo](https://img.youtube.com/vi/KyIk7Jprhh4/0.jpg)](https://www.youtube.com/watch?v=KyIk7Jprhh4)
+
+---
 
 ## Quickstart - SDK
 
