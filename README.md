@@ -333,9 +333,7 @@ ___
 
 ## Ongoing Work
 
-- The current focus is on a Python SDK on top of the [REST API](./api/server-api.yaml).
-
-- This SDK could be used to provide coding and general sandboxes to LLMs or AI Agents via tool use.
+- Less than 500ms sandbox startup time.
 
 ---
 
