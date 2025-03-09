@@ -29,6 +29,7 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
 ## Table of Contents
 
 - [Introduction](#introduction)
+- [Quickstart - SDK](#quickstart-sdk)
 - [Architecture And Features](#architecture-and-features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
@@ -42,6 +43,52 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
     - [Contributor License Agreement](#contributor-license-agreement)
     - [License](#license)
 - [License](#license)
+
+___
+
+## Quickstart - SDK
+
+Arrakis comes with a Python SDK [py-arrakis](https://pypi.org/project/py-arrakis/) that lets you spawn, manage, and interact with VMs seamlessly.
+
+- Install the SDK
+  ```bash
+  pip install py-arrakis
+  ```
+
+- Follow the instructions in [Usage](#usage) to run the `arrakis-restserver` on a Linux machine.
+
+- Use py-arrakis to interact with `arrakis-restserver`.
+
+- Run untrusted code
+  ```python
+  # Replace this with the ip:port where `arrakis-restserver` is running.
+  sandbox_manager = SandboxManager('http://127.0.0.1:7000')
+
+  # Start a new sandbox.
+  with sb as sandbox_manager.start_sandbox('agent-sandbox'):
+    sb.run_cmd('echo hello world')
+
+  # Sandbox `sb` automatically destroyed when the context is exited.
+  ```
+
+- Snapshot and restore a sandbox
+  ```python
+  # Start a sandbox and write some data to a file.
+  sandbox_name = 'agent-sandbox'
+  sandbox = sandbox_manager.start_sandbox(sandbox_name)
+  sandbox.run_cmd("echo 'test data before snapshot' > /tmp/testfile")
+  snapshot_id = sandbox.snapshot("initial-state")
+  sandbox.run_cmd("echo 'test data after snapshot' > /tmp/testfile")
+
+  # Destroy the sandbox.
+  sandbox.destroy()
+
+  # Restore the sandbox from the snapshot and verify we have the same data at the time of the
+  # snapshot.
+  sandbox = sandbox_manager.restore(sandbox_name, snapshot_id)
+  result = sandbox.run_cmd("cat /tmp/testfile")
+  # result["output"] should be "test data before snapshot".
+  ```
 
 ___
 
