@@ -11,8 +11,6 @@ hostservices:
     rootfs: "./out/arrakis-guestrootfs-ext4.img"
     initramfs: "./out/initramfs.cpio.gz"
     port_forwards:
-      - port: "4030"
-        description: "code"
       - port: "5901"
         description: "gui"
     stateful_size_in_mb: "2048"
