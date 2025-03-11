@@ -151,7 +151,7 @@ ___
     - [Code](./cmd/client)
 
 - **Python SDK**
-  - Completed, todo on official shipping and linking here.
+  - Checkout out the official Python SDK - [py-arrakis](https://pypi.org/project/py-arrakis/)
 
 - **Security**
   - Each sandbox runs in a MicroVM.
