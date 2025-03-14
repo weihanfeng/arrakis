@@ -20,13 +20,45 @@ jobs:
 
     - name: Install OpenAPI Generator CLI
       run: |
-        mkdir -p $HOME/bin
-        curl -L https://raw.githubusercontent.com/OpenAPITools/openapi-generator-cli/master/bin/utils/openapi-generator-cli.sh > $HOME/bin/openapi-generator-cli
-        chmod +x $HOME/bin/openapi-generator-cli
-        echo "$HOME/bin" >> $GITHUB_PATH
+        # Install default JDK (as per project's install-deps.sh)
+        sudo apt-get update
+        sudo apt-get install -y default-jdk
+        
+        # Install OpenAPI Generator using npm (as per project's install-deps.sh)
+        npm install @openapitools/openapi-generator-cli -g
+        
+        # Verify installation
+        openapi-generator-cli version
 
-    - name: Build all binaries
-      run: make all
+    - name: Build API clients
+      run: |
+        mkdir -p out/gen/serverapi
+        mkdir -p out/gen/chvapi
+        openapi-generator-cli generate -i ./api/server-api.yaml -g go -o out/gen/serverapi --package-name serverapi \
+        --git-user-id abshkbh \
+        --git-repo-id arrakis/out/gen/serverapi \
+        --additional-properties=withGoMod=false \
+        --global-property models,supportingFiles,apis,apiTests=false
+        
+        openapi-generator-cli generate -i ./api/chv-api.yaml -g go -o out/gen/chvapi --package-name chvapi \
+        --git-user-id abshkbh \
+        --git-repo-id arrakis/out/gen/chvapi \
+        --additional-properties=withGoMod=false \
+        --global-property models,supportingFiles,apis,apiTests=false
+        
+        touch out/arrakis-serverapi.stamp
+        touch out/arrakis-chvapi.stamp
+
+    - name: Build Go binaries
+      run: |
+        mkdir -p out
+        go build -o out/arrakis-restserver ./cmd/restserver
+        go build -o out/arrakis-client ./cmd/client
+        CGO_ENABLED=0 go build -o out/arrakis-guestinit ./cmd/guestinit
+        CGO_ENABLED=0 go build -o out/arrakis-rootfsmaker ./cmd/rootfsmaker
+        CGO_ENABLED=0 go build -o out/arrakis-cmdserver ./cmd/cmdserver
+        CGO_ENABLED=0 go build -o out/arrakis-vsockserver ./cmd/vsockserver
+        go build -o out/arrakis-vsockclient ./cmd/vsockclient
 
     - name: Create release artifacts directory
       run: mkdir -p release-artifacts
@@ -38,7 +70,6 @@ jobs:
         cp out/arrakis-guestinit release-artifacts/
         cp out/arrakis-rootfsmaker release-artifacts/
         cp out/arrakis-cmdserver release-artifacts/
-        cp out/arrakis-cmdclient release-artifacts/
         cp out/arrakis-vsockserver release-artifacts/
         cp out/arrakis-vsockclient release-artifacts/
 
@@ -62,7 +93,6 @@ jobs:
           release-artifacts/arrakis-guestinit
           release-artifacts/arrakis-rootfsmaker
           release-artifacts/arrakis-cmdserver
-          release-artifacts/arrakis-cmdclient
           release-artifacts/arrakis-vsockserver
           release-artifacts/arrakis-vsockclient
         generate_release_notes: true
