@@ -13,6 +13,8 @@ hostservices:
     port_forwards:
       - port: "5901"
         description: "gui"
+      - port: "5736-5740"
+        description: "code"
     stateful_size_in_mb: "2048"
     guest_mem_percentage: "30"
   client:

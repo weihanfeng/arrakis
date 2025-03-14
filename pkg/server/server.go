@@ -221,52 +221,114 @@ func bridgeExists(bridgeName string) (bool, error) {
 	return false, nil
 }
 
+// setupSinglePortForward creates an iptables rule to forward a port and returns the port forward details
+func (s *Server) setupSinglePortForward(vmIP string, guestPort int64, description string, portForwardDesc string) (portForward, error) {
+	hostPort, err := s.portAllocator.AllocatePort()
+	if err != nil {
+		return portForward{}, fmt.Errorf("failed to allocate port: %w", err)
+	}
+	cleanup := cleanup.Make(func() {
+		log.Infof("Cleaning up allocated port %d due to error", hostPort)
+		err := s.portAllocator.FreePort(hostPort)
+		if err != nil {
+			log.Warnf("Failed to free port %d: %v", hostPort, err)
+		}
+	})
+	defer cleanup.Clean()
+
+	log.Infof(
+		"Setting up port forward %d -> %s:%d (%s)",
+		hostPort,
+		vmIP,
+		guestPort,
+		description,
+	)
+
+	cmd := exec.Command(
+		"iptables",
+		"-t",
+		"nat",
+		"-A",
+		"PREROUTING",
+		"-p",
+		"tcp",
+		"--dport",
+		strconv.Itoa(int(hostPort)),
+		"-j",
+		"DNAT",
+		"--to-destination",
+		fmt.Sprintf("%s:%d", vmIP, guestPort),
+	)
+
+	err = cmd.Run()
+	if err != nil {
+		return portForward{}, fmt.Errorf(
+			"error forwarding port %d->%s:%d: %w",
+			hostPort,
+			vmIP,
+			guestPort,
+			err,
+		)
+	}
+
+	cleanup.Release()
+	return portForward{
+		hostPort:    hostPort,
+		guestPort:   int32(guestPort),
+		description: portForwardDesc,
+	}, nil
+}
+
 // setupPortForwardsToVM forwards the given port forwards to the VM.
 func (s *Server) setupPortForwardsToVM(vmIP string, guestPorts []config.PortForwardConfig) ([]portForward, error) {
 	portForwards := make([]portForward, 0, len(guestPorts))
 	for _, guestPortConfig := range guestPorts {
-		guestPort, err := strconv.ParseInt(guestPortConfig.Port, 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("invalid guest port %s: %w", guestPortConfig.Port, err)
-		}
+		// Check if the port is a range (e.g., "6000-7000")
+		portRange := strings.Split(guestPortConfig.Port, "-")
+		if len(portRange) == 2 {
+			// Handle port range
+			startPort, err := strconv.ParseInt(portRange[0], 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("invalid start port in range %s: %w", guestPortConfig.Port, err)
+			}
+			endPort, err := strconv.ParseInt(portRange[1], 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("invalid end port in range %s: %w", guestPortConfig.Port, err)
+			}
 
-		hostPort, err := s.portAllocator.AllocatePort()
-		if err != nil {
-			return nil, fmt.Errorf("failed to allocate port: %w", err)
-		}
+			if startPort >= endPort {
+				return nil, fmt.Errorf("invalid port range %s: start port must be less than end port", guestPortConfig.Port)
+			}
 
-		portForwards = append(portForwards, portForward{
-			hostPort:    hostPort,
-			guestPort:   int32(guestPort),
-			description: guestPortConfig.Description,
-		})
+			log.Infof(
+				"Setting up port range forward for ports %d-%d to %s (%s)",
+				startPort,
+				endPort,
+				vmIP,
+				guestPortConfig.Description,
+			)
 
-		log.Infof(
-			"Setting up port forward %d -> %s:%d (%s)",
-			hostPort,
-			vmIP,
-			guestPort,
-			guestPortConfig.Description,
-		)
-		cmd := exec.Command(
-			"iptables",
-			"-t",
-			"nat",
-			"-A",
-			"PREROUTING",
-			"-p",
-			"tcp",
-			"--dport",
-			strconv.Itoa(int(hostPort)),
-			"-j",
-			"DNAT",
-			"--to-destination",
-			fmt.Sprintf("%s:%d", vmIP, guestPort),
-		)
+			// Forward each port in the range
+			for guestPort := startPort; guestPort <= endPort; guestPort++ {
+				portForwardDesc := fmt.Sprintf("%s (range %s)", guestPortConfig.Description, guestPortConfig.Port)
+				pf, err := s.setupSinglePortForward(vmIP, guestPort, guestPortConfig.Description, portForwardDesc)
+				if err != nil {
+					return nil, err
+				}
+				portForwards = append(portForwards, pf)
+			}
+		} else {
+			// Handle single port (existing logic)
+			guestPort, err := strconv.ParseInt(guestPortConfig.Port, 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("invalid guest port %s: %w", guestPortConfig.Port, err)
+			}
 
-		err = cmd.Run()
-		if err != nil {
-			return nil, fmt.Errorf("error forwarding port %d->%s:%d: %w", hostPort, vmIP, guestPort, err)
+			pf, err := s.setupSinglePortForward(vmIP, guestPort, guestPortConfig.Description, guestPortConfig.Description)
+			if err != nil {
+				return nil, err
+			}
+			portForwards = append(portForwards, pf)
 		}
 	}
 	return portForwards, nil
