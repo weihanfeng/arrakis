@@ -1,0 +1,70 @@
+name: Build Arrakis Binaries
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23.1'
+        check-latest: true
+
+    - name: Install OpenAPI Generator CLI
+      run: |
+        mkdir -p $HOME/bin
+        curl -L https://raw.githubusercontent.com/OpenAPITools/openapi-generator-cli/master/bin/utils/openapi-generator-cli.sh > $HOME/bin/openapi-generator-cli
+        chmod +x $HOME/bin/openapi-generator-cli
+        echo "$HOME/bin" >> $GITHUB_PATH
+
+    - name: Build all binaries
+      run: make all
+
+    - name: Create release artifacts directory
+      run: mkdir -p release-artifacts
+
+    - name: Copy binaries to artifacts directory
+      run: |
+        cp out/arrakis-restserver release-artifacts/
+        cp out/arrakis-client release-artifacts/
+        cp out/arrakis-guestinit release-artifacts/
+        cp out/arrakis-rootfsmaker release-artifacts/
+        cp out/arrakis-cmdserver release-artifacts/
+        cp out/arrakis-cmdclient release-artifacts/
+        cp out/arrakis-vsockserver release-artifacts/
+        cp out/arrakis-vsockclient release-artifacts/
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: arrakis-binaries
+        path: release-artifacts/
+        retention-days: 7
+
+    - name: Create Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Release ${{ github.sha }}
+        tag_name: release-${{ github.run_number }}
+        files: |
+          release-artifacts/arrakis-restserver
+          release-artifacts/arrakis-client
+          release-artifacts/arrakis-guestinit
+          release-artifacts/arrakis-rootfsmaker
+          release-artifacts/arrakis-cmdserver
+          release-artifacts/arrakis-cmdclient
+          release-artifacts/arrakis-vsockserver
+          release-artifacts/arrakis-vsockclient
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
