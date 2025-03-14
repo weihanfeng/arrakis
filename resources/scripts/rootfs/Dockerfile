@@ -118,3 +118,10 @@ RUN wget -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/li
     apt-get update && apt-get install -f -y && \
     rm -rf /tmp/google-chrome-stable_current_amd64.deb && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js and npm
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x -o nodesource_setup.sh && \
+    sudo -E bash nodesource_setup.sh && \
+    sudo apt-get install -y nodejs && \
+    rm -f nodesource_setup.sh && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
