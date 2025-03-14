@@ -63,7 +63,7 @@ Arrakis comes with a Python SDK [py-arrakis](https://pypi.org/project/py-arrakis
   pip install py-arrakis
   ```
 
-- Follow the instructions in [Usage](#usage) to run the `arrakis-restserver` on a Linux machine.
+- Follow the instructions in [Usage](#usage) to run the `arrakis-restserver` on a Linux machine, or download pre-built binaries from the [official releases page](https://github.com/abshkbh/arrakis/releases).
 
 - Use py-arrakis to interact with `arrakis-restserver`.
 
@@ -205,6 +205,8 @@ ___
 ---
 
 ## Build
+
+- No need to follow this section if downloading prebuilt binaries from the [official releases page](https://github.com/abshkbh/arrakis/releases).
 
 - Make everything. You"ll be prompted by `sudo` once while making the guest rootfs.
     ```bash
