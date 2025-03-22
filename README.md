@@ -10,17 +10,17 @@ AI agents can generate malicious or buggy code that can attack the host system i
 
 Many agents have elaborate multi-step plans to achieve their goals and benefit from the ability to backtrack to intermediate states.
 
-**Arrakis** provides a **fully customizable** and **self-hosted** solution to spawn and manage Sandboxes for code execution and computer use. It has out-of-the box support for backtracking via **snapshot-and-restore**.
+**Arrakis** provides a **secure**, **fully customizable**, and **self-hosted** solution to spawn and manage Sandboxes for code execution and computer use. It has out-of-the box support for backtracking via **snapshot-and-restore**.
+
+- Secure by design, each sandbox [runs in a MicroVM](#architecture-and-features).
 
 - Each sandbox runs Ubuntu inside with a code execution service and a VNC server running at boot.
 
-- A REST API and a Python SDK let clients (both humans and AI Agents) programatically spawn sandboxes, upload files, a and execute code inside each sandbox.
+- A REST API, Python SDK [py-arrakis](https://pypi.org/project/py-arrakis/), and a [MCP server](https://github.com/abshkbh/arrakis-mcp-server) let clients (both humans and AI Agents) programatically spawn sandboxes, upload files, and execute code inside each sandbox.
 
 - Automatically sets up and manages port forwarding from the self-hosted public server to the sanboxes running on it i.e. clients can easily access the sandbox GUI (including Chrome for computer use) without extra setup.
 
 - Supports **snapshot-and-restore** out of the box i.e. AI Agents can do some work, snapshot a sandbox, and later backtrack to the exact previous state by restoring the snapshot. This means any processes spawned, files modified etc. will be restored as is inside the sandbox.Useful for Monte Carlo Tree Search based agents or explainability of elaborate agent execution flows.
-
-- Secure by design, each sandbox [runs in a MicroVM](#architecture-and-features).
 
 ---
 
