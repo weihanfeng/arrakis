@@ -279,9 +279,11 @@ func (s *restServer) vmCommand(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.vmServer.VMCommand(r.Context(), vmName, cmd, blocking)
 	if err != nil {
 		logger.WithFields(log.Fields{
-			"vmName": vmName,
-			"cmd":    cmd,
-		}).WithError(err).Error("Failed to execute command")
+			"vmName":   vmName,
+			"cmd":      cmd,
+			"blocking": blocking,
+			"success":  false,
+		}).Error("Failed to execute command")
 		sendErrorResponse(
 			w,
 			http.StatusInternalServerError,
@@ -289,6 +291,12 @@ func (s *restServer) vmCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logger.WithFields(log.Fields{
+		"vmName":   vmName,
+		"cmd":      cmd,
+		"blocking": blocking,
+		"success":  true,
+	}).Info("Successfully executed command")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
