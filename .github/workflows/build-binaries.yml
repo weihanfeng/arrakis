@@ -68,7 +68,7 @@ jobs:
     - name: Create release artifacts directory
       run: mkdir -p release-artifacts
 
-    - name: Copy binaries to artifacts directory
+    - name: Copy binaries and config to artifacts directory
       run: |
         cp out/arrakis-restserver release-artifacts/
         cp out/arrakis-client release-artifacts/
@@ -77,6 +77,7 @@ jobs:
         cp out/arrakis-cmdserver release-artifacts/
         cp out/arrakis-vsockserver release-artifacts/
         cp out/arrakis-vsockclient release-artifacts/
+        cp config.yaml release-artifacts/
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -100,6 +101,7 @@ jobs:
           release-artifacts/arrakis-cmdserver
           release-artifacts/arrakis-vsockserver
           release-artifacts/arrakis-vsockclient
+          release-artifacts/config.yaml
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
