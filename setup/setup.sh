@@ -80,7 +80,7 @@ download_file "$RELEASE_URL/config.yaml" "$CONFIG_FILE" "Configuration file"
 
 # Download install-images.py
 print_message "Downloading install-images.py script..."
-curl -L -o "$INSTALL_IMAGES_SCRIPT" "https://raw.githubusercontent.com/abshkbh/arrakis/main/docs/setup/install-images.py"
+curl -L -o "$INSTALL_IMAGES_SCRIPT" "https://raw.githubusercontent.com/abshkbh/arrakis/main/setup/install-images.py"
 chmod +x "$INSTALL_IMAGES_SCRIPT"
 
 # Run install-images.py to download required images

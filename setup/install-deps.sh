@@ -69,7 +69,7 @@ if [ -d "$HOME/projects/arrakis" ]; then
 else
   cd "$HOME/projects"
   git clone https://github.com/abshkbh/arrakis.git
-  ./install-images.py
+  ./setup/install-images.py
 fi
 cd "$HOME"
 
