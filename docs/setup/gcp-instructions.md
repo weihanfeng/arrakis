@@ -14,25 +14,32 @@
 
 ## Instructions to run on the GCE VM
 
-- ssh into the VM.
+- SSH into the VM.
 
-    ```bash
+    ```bash    
+    # Use the setup script to install Arrakis
     cd $HOME
-    curl -LO "https://raw.githubusercontent.com/abshkbh/arrakis/btrfs-stateful-debugging/install-deps.sh"
-    chmod +x install-deps.sh
-    ./install-deps.sh
-    source ~/.bashrc
+    curl -sSL "https://raw.githubusercontent.com/abshkbh/arrakis/main/docs/setup/setup.sh" | bash
     ```
 
-- Build the project
+- Verify the installation
 
     ```bash
-    cd $HOME/projects/arrakis
-    setup/install-images.py
-    make clean && make all
+    cd $HOME/arrakis-prebuilt
+    ls
     ```
-- Verify it builds successfully
+
+- Run the Arrakis REST server
 
     ```bash
-    ls out/
+    sudo ./arrakis-restserver
     ```
+
+- In another terminal, use the client to start sandboxes.
+
+    ```bash
+    cd ./arrakis-prebuilt
+    ./arrakis-client
+    ```
+
+- Or use the Python SDK [py-arrakis](https://pypi.org/project/py-arrakis/) to start sandboxes.
