@@ -28,16 +28,18 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
 
 - [Introduction](#introduction)
 - [Demo](#demo)
-- [Quickstart - SDK](#quickstart---sdk)
-- [Quickstart - GUI For Computer Use](#quickstart---gui-for-computer-use)
+- [Setup](#setup)
+  - [Prerequisites](#prerequisites)
+  - [Quick setup using prebuilts](#quick-setup-using-prebuilts)
+  - [Run the arrakis-restserver](#run-the-arrakis-restserver)
+  - [Use the CLI or py-arrakis](#use-the-cli-or-py-arrakis)
+- [Quickstart](#quickstart)
+  - [SDK](#sdk)
+  - [MCP](#mcp)
+  - [GUI For Computer Use](#gui-for-computer-use)
+  - [CLI Usage](#cli-usage)
 - [Architecture And Features](#architecture-and-features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Build](#build)
-- [Build a custom rootfs for the guest](#build-a-custom-rootfs-for-the-guest)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Ongoing Work](#ongoing-work)
+- [Customization](#customization)
 - [Contribution](#contribution)
   - [Legal Info](#legal-info)
     - [Contributor License Agreement](#contributor-license-agreement)
@@ -54,7 +56,46 @@ Watch a quick demo of Arrakis in action:
 
 ---
 
-## Quickstart - SDK
+## Setup
+
+### Prerequisites
+
+- `cloud-hypervisor` only works with `/dev/kvm` for virtualization on Linux machines. Hence, we only support Linux machines.
+
+- Check if virtualization is enabled on the host by running. 
+    ```bash
+    stat /dev/kvm
+    ```
+
+### Quick setup using prebuilts
+
+- You can leverage our setup.sh script and prebuilt binaries to easily set up Arrakis.
+    ```bash
+    curl -sSL https://raw.githubusercontent.com/abshkbh/arrakis/main/setup/setup.sh | bash
+    ls arrakis-prebuilt
+    ```
+
+### Run the arrakis-restserver
+
+- Now we have a folder with all binaries and images pulled. We always need to run `arrakis-restserver` first.
+    ```bash
+    cd arrakis-prebuilt
+    sudo ./arrakis-restserver
+    ```
+
+### Use the CLI or py-arrakis
+
+- You can use the CLI or [py-arrakis](https://pypi.org/project/py-arrakis/) to spawn and manage VMs.
+    ```bash
+    cd arrakis-prebuilt
+    ./arrakis-client start -n agent-sandbox
+    ```
+
+---
+
+## Quickstart
+
+### SDK
 
 Arrakis comes with a Python SDK [py-arrakis](https://pypi.org/project/py-arrakis/) that lets you spawn, manage, and interact with VMs seamlessly.
 
@@ -100,7 +141,30 @@ Arrakis comes with a Python SDK [py-arrakis](https://pypi.org/project/py-arrakis
 
 ___
 
-## Quickstart - GUI For Computer Use
+### MCP
+
+- Arrakis also comes with a [MCP server](https://github.com/abshkbh/arrakis-mcp-server) that lets MCP clients like Claude Desktop App, Windsurf, Cursor etc.. spawn and manage sandboxes.
+
+- Here is a sample `claude_desktop_config.json`
+  ```json
+  {
+      "mcpServers": {
+        "arrakis": {
+            "command": "/Users/username/.local/bin/uv",
+            "args": [
+                "--directory",
+                "/Users/username/Documents/projects/arrakis-mcp-server",
+                "run",
+                "arrakis_mcp_server.py"
+            ]
+        }
+      }
+  }
+  ```
+
+___
+
+### GUI For Computer Use
 
 ![Arrakis GUI](docs/images/arrakis-gui.png)
 
@@ -135,148 +199,11 @@ ___
   ```
 ___
 
-## Architecture And Features
+### CLI Usage
 
-![High Level Architecture Diagram](docs/images/high-level-architecture-arrakis.png)
+- Arrakis comes with an out-of-the-box CLI client that you can use to spawn and manage VMs.
 
-`arrakis` includes the following services and features
-
-- **REST API**
-  - **arrakis-restserver**
-    - A daemon that exposes a REST API to *start*, *stop*, *destroy*, *list-all* VMs. Every VM started is managed by this server i.e. the lifetime of each VM is tied to the lifetime of this daemon.
-    - The api is present at [api/server-api.yaml](./api/server-api.yaml).
-    - [Code](./cmd/restserver)
-  - **arrakis-client**
-    - A Golang CLI that you can use to interact with **arrakis-restserver** to spawn and manage VMs.
-    - [Code](./cmd/client)
-
-- **Python SDK**
-  - Checkout out the official Python SDK - [py-arrakis](https://pypi.org/project/py-arrakis/)
-
-- **Security**
-  - Each sandbox runs in a MicroVM.
-    - MicroVMs are lightweight Virtual Machines (compared to traditional VMs) powered by Rust based Virtual Machine Managers such as [firecracker](https://github.com/firecracker-microvm/firecracker) and [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor).
-    - **Arrakis** uses [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) as the VMM.
-  - Any untrusted code executed within the sandbox is isolated from the host machine as well as other agents.
-  - We use overlayfs to also protect the root filesystem of each sandbox.
-
-- **Customization**
-  - Dockerfile based rootfs customization.
-    - Easily add packages and binaries to your VM's rootfs by manipulating a [Dockerfile](./resources/scripts/rootfs/Dockerfile).
-  - Out of the box networking setup for the guest.
-    - Each sandbox gets a tap device that gets added to a Linux bridge on the host.
-    - ssh access to the sandbox.
-  - Prebuilt Linux kernel for the sandbox
-    - Or pass your own kernel to **arrakis-client** while starting VMs.
-
----
-
-## Prerequisites
-
-- `cloud-hypervisor` only works with `/dev/kvm` for virtualization on Linux machines. Hence, we only support Linux machines.
-- The [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) binary installed on the host. More on this in the [Configuration](#Configuration) section.
-- Any recent host (machine you'll run the **arrakis-restserver** on) Linux kernel >= 2.6.
-- Check if virtualization is enabled on the host by running. 
-    ```bash
-    stat /dev/kvm
-    ```
-- [Golang >= 1.23](https://go.dev/) installed on the host machine.
-
----
-
-## Installation
-
-- Install Golang dependencies using -
-    ```bash
-    go mod tidy
-    ```
-
-- The easiest way to install prerequisite images is to use the `install-images.py` script.
-    ```bash
-    ./install-images.py
-    ```
-
-- The following images are installed by the script above and can also be installed manually -
-  
-  - Install the [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) binary and note down the path of the binary. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/cloud-hypervisor`, you may place it there.
-
-  - Download the prebuilt guest kernel for the VM from [arrakis-images](https://github.com/abshkbh/arrakis-images/blob/main/guest/kernel/vmlinux.bin), note down the path. This will be used in the [Configuration](#configuration) section. By default we look for this binary at `resources/bin/vmlinux.bin`, you may place it there.
-
----
-
-## Build
-
-- No need to follow this section if downloading prebuilt binaries from the [official releases page](https://github.com/abshkbh/arrakis/releases).
-
-- Make everything. You"ll be prompted by `sudo` once while making the guest rootfs.
-    ```bash
-    make all
-    ```
-  All binaries will be placed in `./out`.
-
-- The following binaries are built -
-  - **arrakis-restserver** - A daemon exposing a REST API to create, manage and interact with cloud-hypervisor based MicroVMs.
-  - **arrakis-client** - A CLI client to communicate with **arrakis-restserver**.
-  - **arrakis-cmdserver** - A daemon to execute shell commands that can be put inside the guest using the [Dockerfile](./resources/scripts/rootfs/Dockerfile) and **arrakis-rootfsmaker**.
-  - **arrakis-codeserver** - A daemon to run **python** or **typescript** node that can be put inside the guest using the `Dockerfile` and **arrakis-rootfsmaker**.
-  - **arrakis-guestinit** - The init running inside the MicroVM guest.
-  - **arrakis-guestrootfs-ext4.img** - The rootfs used for the MicroVM guest.
-  - **arrakis-rootfsmaker** - The program used to convert the [Dockerfile](./resources/scripts/rootfs/Dockerfile) into the guest rootfs (**arrakis-guestrootfs-ext4.img**).
-  - `gen` - Contains the generated code for both the [cloud-hypervisor API](./api/arrakis-api.yaml) (used by **arrakis-restserver**) and [REST server API](./api/server-api.yaml) (used by **arrakis-client**).  
-
-- Clean all binaries.
-    ```bash
-    make clean
-    ```
-
----
-
-## Build a custom rootfs for the guest
-
-- The rootfs for guests can be configured using the provided [Dockerfile](./resources/scripts/rootfs/Dockerfile).
-
-  - An example of how custom binaries can be added to the rootfs can be found [here](./resources/scripts/rootfs/Dockerfile#L66).
-    - By default we keep custom binaries at `/opt/custom_scripts/` within the guest.  
-
-- Command to make the guest rootfs -
-  ```bash
-  make guestrootfs
-  ```
-
----
-
-## Configuration
-
-- A [config.yaml](./config.yaml) file is used to configure all the services provided by this project. It has defaults but could be modified.
-
-- Configuring services on the host -
-  - Host services are configured under the `hostservices` section.
-
-- Configuring **arrakis-restserver** -
-  - The `hostservices` -> `restserver` sub-section is used.
-  - **state_dir** - Where each MicroVM's runtime state is stored.
-  - **chv_bin** - The path to the **cloud-hypervisor** binary on the host.
-  - **kernel** - The path to the kernel to be used for all MicroVMs.
-  - **rootfs** - The path to the rootfs to be used for all MicroVMs. Set to **./out/arrakis-guestrootfs-ext4.img** by default.
-
-- Configuring **arrakis-client** -
-  - The `hostservices` -> `client` sub-section is used.
-  - **server_host** - The IP at which the **arrakis-restserver** running.
-  - **server_port** - The port at which the **arrakis-restserver** is running.
-
-- Configuring services inside the guest -
-  - Guest services are configured under the `guestservices` section.
-  - The sample config file has an example for an optional **codeserver** inside the guest.
-
----
-
-## Usage
-
-- Before anything we need our `arrakis-restserver` to start. Start it with -
-  ```bash
-  sudo ./out/arrakis-restserver
-  ```
-- Root access is only needed to configure **iptables** for guest networking. Removing the root dependency is being currently worked on.
+- Start **arrakis-restserver** as detailed in the [Setup](#setup) section.
 
 - In a separate shell we will use the CLI client to create and manage VMs.
 
@@ -340,11 +267,45 @@ ___
 
 ---
 
-## Ongoing Work
+## Architecture And Features
 
-- Reduce sandbox startup time to less than 500 ms.
+![High Level Architecture Diagram](docs/images/high-level-architecture-arrakis.png)
 
-- Making existing coding agents work with Arrakis.
+`arrakis` includes the following services and features
+
+- **REST API**
+  - **arrakis-restserver**
+    - A daemon that exposes a REST API to *start*, *stop*, *destroy*, *list-all* VMs. Every VM started is managed by this server i.e. the lifetime of each VM is tied to the lifetime of this daemon.
+    - The api is present at [api/server-api.yaml](./api/server-api.yaml).
+    - [Code](./cmd/restserver)
+  - **arrakis-client**
+    - A Golang CLI that you can use to interact with **arrakis-restserver** to spawn and manage VMs.
+    - [Code](./cmd/client)
+
+- **Python SDK**
+  - Checkout out the official Python SDK - [py-arrakis](https://pypi.org/project/py-arrakis/)
+
+- **Security**
+  - Each sandbox runs in a MicroVM.
+    - MicroVMs are lightweight Virtual Machines (compared to traditional VMs) powered by Rust based Virtual Machine Managers such as [firecracker](https://github.com/firecracker-microvm/firecracker) and [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor).
+    - **Arrakis** uses [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) as the VMM.
+  - Any untrusted code executed within the sandbox is isolated from the host machine as well as other agents.
+  - We use overlayfs to also protect the root filesystem of each sandbox.
+
+- **Customization**
+  - Dockerfile based rootfs customization.
+    - Easily add packages and binaries to your VM's rootfs by manipulating a [Dockerfile](./resources/scripts/rootfs/Dockerfile).
+  - Out of the box networking setup for the guest.
+    - Each sandbox gets a tap device that gets added to a Linux bridge on the host.
+    - ssh access to the sandbox.
+  - Prebuilt Linux kernel for the sandbox
+    - Or pass your own kernel to **arrakis-client** while starting VMs.
+
+---
+
+## Customization
+
+- [Detailed README](./docs/detailed-README.md) goes over how to customize the default packages and binaries running in a sandbox.
 
 ---
 
