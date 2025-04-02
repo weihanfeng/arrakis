@@ -50,9 +50,9 @@ ___
 
 ## Demo
 
-Watch a quick demo of Arrakis in action:
+Watch Claude code a live Google docs clone using Arrakis via MCP. It even snapshots the sandbox to checkpoint progress.
 
-[![Arrakis Demo](https://img.youtube.com/vi/KyIk7Jprhh4/0.jpg)](https://www.youtube.com/watch?v=KyIk7Jprhh4)
+[![Arrakis Demo](https://img.youtube.com/vi/IZ5cAnhAdPQ/0.jpg)](https://www.youtube.com/watch?v=IZ5cAnhAdPQ)
 
 ---
 
