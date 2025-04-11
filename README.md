@@ -30,6 +30,7 @@ Many agents have elaborate multi-step plans to achieve their goals and benefit f
 - [Demo](#demo)
 - [Setup](#setup)
   - [Prerequisites](#prerequisites)
+  - [GCP Setup](#gcp-setup)
   - [Quick setup using prebuilts](#quick-setup-using-prebuilts)
   - [Run the arrakis-restserver](#run-the-arrakis-restserver)
   - [Use the CLI or py-arrakis](#use-the-cli-or-py-arrakis)
@@ -66,6 +67,10 @@ Watch Claude code a live Google docs clone using Arrakis via MCP. It even snapsh
     ```bash
     stat /dev/kvm
     ```
+
+### GCP Setup
+
+- Follow the instructions in [GCP Setup](./setup/gcp-instructions.md) to set up Arrakis on GCE VM.
 
 ### Quick setup using prebuilts
 

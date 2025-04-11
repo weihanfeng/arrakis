@@ -19,7 +19,7 @@
     ```bash    
     # Use the setup script to install Arrakis
     cd $HOME
-    curl -sSL "https://raw.githubusercontent.com/abshkbh/arrakis/main/docs/setup/setup.sh" | bash
+    curl -sSL "https://raw.githubusercontent.com/abshkbh/arrakis/main/setup/setup.sh" | bash
     ```
 
 - Verify the installation
