@@ -41,6 +41,9 @@ jobs:
     - name: Build Go binaries
       run: make restserver client guestinit rootfsmaker cmdserver vsockserver vsockclient initramfs
 
+    - name: Build rootfs
+      run: sudo make guestrootfs
+
     - name: Create release artifacts directory
       run: mkdir -p release-artifacts
 
@@ -54,6 +57,7 @@ jobs:
         cp out/arrakis-vsockserver release-artifacts/
         cp out/arrakis-vsockclient release-artifacts/
         cp out/initramfs.cpio.gz release-artifacts/
+        cp out/arrakis-guestrootfs-ext4.img release-artifacts/
         cp config.yaml release-artifacts/
 
     - name: Upload artifacts
