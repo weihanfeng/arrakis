@@ -76,8 +76,13 @@ make_executable "$ARRAKIS_DIR/arrakis-restserver"
 download_file "$RELEASE_URL/arrakis-client" "$ARRAKIS_DIR/arrakis-client" "Arrakis Client"
 make_executable "$ARRAKIS_DIR/arrakis-client"
 
-# Download arrakis-guestrootfs-ext4.img
-download_file "$RELEASE_URL/arrakis-guestrootfs-ext4.img" "$OUT_DIR/arrakis-guestrootfs-ext4.img" "Arrakis Guest Rootfs"
+# Download and extract arrakis-guestrootfs-ext4.img.tar.gz
+print_message "Downloading and extracting Arrakis Guest Rootfs..."
+download_file "$RELEASE_URL/arrakis-guestrootfs-ext4.img.tar.gz" "$OUT_DIR/arrakis-guestrootfs-ext4.img.tar.gz" "Compressed Arrakis Guest Rootfs"
+
+print_message "Extracting rootfs image..."
+tar -xzf "$OUT_DIR/arrakis-guestrootfs-ext4.img.tar.gz" -C "$OUT_DIR"
+print_message "Extracted rootfs image to $OUT_DIR/arrakis-guestrootfs-ext4.img"
 
 # Download initramfs.cpio.gz
 download_file "$RELEASE_URL/initramfs.cpio.gz" "$OUT_DIR/initramfs.cpio.gz" "Initramfs image"

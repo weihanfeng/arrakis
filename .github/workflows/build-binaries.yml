@@ -60,6 +60,14 @@ jobs:
         echo "File type: $(file out/arrakis-guestrootfs-ext4.img)"
         echo "Disk usage: $(du -h out/arrakis-guestrootfs-ext4.img)"
         echo "============================================================"
+        
+    - name: Compress rootfs image
+      run: |
+        echo "Compressing rootfs image..."
+        tar -czf out/arrakis-guestrootfs-ext4.img.tar.gz -C out arrakis-guestrootfs-ext4.img
+        echo "Compressed rootfs image details:"
+        ls -lh out/arrakis-guestrootfs-ext4.img.tar.gz
+        echo "Compression ratio: $(($(stat -c %s out/arrakis-guestrootfs-ext4.img.tar.gz) * 100 / $(stat -c %s out/arrakis-guestrootfs-ext4.img)))%"
 
     - name: Create release artifacts directory
       run: mkdir -p release-artifacts
@@ -74,7 +82,7 @@ jobs:
         cp out/arrakis-vsockserver release-artifacts/
         cp out/arrakis-vsockclient release-artifacts/
         cp out/initramfs.cpio.gz release-artifacts/
-        cp out/arrakis-guestrootfs-ext4.img release-artifacts/
+        cp out/arrakis-guestrootfs-ext4.img.tar.gz release-artifacts/
         cp config.yaml release-artifacts/
 
     - name: Upload artifacts
@@ -100,7 +108,7 @@ jobs:
           release-artifacts/arrakis-vsockserver
           release-artifacts/arrakis-vsockclient
           release-artifacts/initramfs.cpio.gz
-          release-artifacts/arrakis-guestrootfs-ext4.img
+          release-artifacts/arrakis-guestrootfs-ext4.img.tar.gz
           release-artifacts/config.yaml
         generate_release_notes: true
       env:
