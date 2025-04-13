@@ -90,6 +90,7 @@ jobs:
           release-artifacts/arrakis-vsockserver
           release-artifacts/arrakis-vsockclient
           release-artifacts/initramfs.cpio.gz
+          release-artifacts/arrakis-guestrootfs-ext4.img
           release-artifacts/config.yaml
         generate_release_notes: true
       env:
