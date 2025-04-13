@@ -35,6 +35,13 @@ jobs:
         # Verify installation
         openapi-generator-cli version
 
+    - name: Download required binaries
+      run: |
+        mkdir -p resources/bin
+        # Download busybox for initramfs creation
+        curl -L -o resources/bin/busybox https://raw.githubusercontent.com/abshkbh/arrakis-images/main/busybox
+        chmod +x resources/bin/busybox
+
     - name: Build API clients
       run: make serverapi chvapi
 
