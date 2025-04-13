@@ -36,34 +36,10 @@ jobs:
         openapi-generator-cli version
 
     - name: Build API clients
-      run: |
-        mkdir -p out/gen/serverapi
-        mkdir -p out/gen/chvapi
-        openapi-generator-cli generate -i ./api/server-api.yaml -g go -o out/gen/serverapi --package-name serverapi \
-        --git-user-id abshkbh \
-        --git-repo-id arrakis/out/gen/serverapi \
-        --additional-properties=withGoMod=false \
-        --global-property models,supportingFiles,apis,apiTests=false
-        
-        openapi-generator-cli generate -i ./api/chv-api.yaml -g go -o out/gen/chvapi --package-name chvapi \
-        --git-user-id abshkbh \
-        --git-repo-id arrakis/out/gen/chvapi \
-        --additional-properties=withGoMod=false \
-        --global-property models,supportingFiles,apis,apiTests=false
-        
-        touch out/arrakis-serverapi.stamp
-        touch out/arrakis-chvapi.stamp
+      run: make serverapi chvapi
 
     - name: Build Go binaries
-      run: |
-        mkdir -p out
-        go build -o out/arrakis-restserver ./cmd/restserver
-        go build -o out/arrakis-client ./cmd/client
-        CGO_ENABLED=0 go build -o out/arrakis-guestinit ./cmd/guestinit
-        CGO_ENABLED=0 go build -o out/arrakis-rootfsmaker ./cmd/rootfsmaker
-        CGO_ENABLED=0 go build -o out/arrakis-cmdserver ./cmd/cmdserver
-        CGO_ENABLED=0 go build -o out/arrakis-vsockserver ./cmd/vsockserver
-        go build -o out/arrakis-vsockclient ./cmd/vsockclient
+      run: make restserver client guestinit rootfsmaker cmdserver vsockserver vsockclient
 
     - name: Create release artifacts directory
       run: mkdir -p release-artifacts
