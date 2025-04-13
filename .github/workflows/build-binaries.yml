@@ -2,7 +2,7 @@ name: Build Arrakis Binaries
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "ci-cd-test" ]
   pull_request:
     branches: [ "main" ]
 
