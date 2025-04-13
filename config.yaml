@@ -1,6 +1,6 @@
 hostservices:
   restserver:
-    host: "127.0.0.1"
+    host: "0.0.0.0"
     port: "7000"
     state_dir: "./vm-state"
     bridge_name: "br0"
