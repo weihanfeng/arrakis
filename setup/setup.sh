@@ -10,7 +10,8 @@ NC='\033[0m' # No Color
 ARRAKIS_DIR="./arrakis-prebuilt"
 LATEST_RELEASE_URL="https://github.com/abshkbh/arrakis/releases/latest"
 RESOURCES_DIR="$ARRAKIS_DIR/resources"
-OUT_DIR="$RESOURCES_DIR/bin"
+RESOURCE_BIN_DIR="$RESOURCES_DIR/bin"
+OUT_DIR="$ARRAKIS_DIR/out"
 CONFIG_FILE="$ARRAKIS_DIR/config.yaml"
 INSTALL_IMAGES_SCRIPT="$ARRAKIS_DIR/install-images.py"
 
@@ -51,6 +52,7 @@ make_executable() {
 print_message "Creating Arrakis directory structure..."
 mkdir -p "$ARRAKIS_DIR"
 mkdir -p "$RESOURCES_DIR"
+mkdir -p "$RESOURCES_BIN_DIR"
 mkdir -p "$OUT_DIR"
 
 
@@ -73,6 +75,9 @@ make_executable "$ARRAKIS_DIR/arrakis-restserver"
 # Download arrakis-client
 download_file "$RELEASE_URL/arrakis-client" "$ARRAKIS_DIR/arrakis-client" "Arrakis Client"
 make_executable "$ARRAKIS_DIR/arrakis-client"
+
+# Download initramfs.cpio.gz
+download_file "$RELEASE_URL/initramfs.cpio.gz" "$OUT_DIR/initramfs.cpio.gz" "Initramfs image"
 
 # Download config.yaml
 download_file "$RELEASE_URL/config.yaml" "$CONFIG_FILE" "Configuration file"

@@ -39,7 +39,7 @@ jobs:
       run: make serverapi chvapi
 
     - name: Build Go binaries
-      run: make restserver client guestinit rootfsmaker cmdserver vsockserver vsockclient
+      run: make restserver client guestinit rootfsmaker cmdserver vsockserver vsockclient initramfs
 
     - name: Create release artifacts directory
       run: mkdir -p release-artifacts
@@ -53,6 +53,7 @@ jobs:
         cp out/arrakis-cmdserver release-artifacts/
         cp out/arrakis-vsockserver release-artifacts/
         cp out/arrakis-vsockclient release-artifacts/
+        cp out/initramfs.cpio.gz release-artifacts/
         cp config.yaml release-artifacts/
 
     - name: Upload artifacts
@@ -77,6 +78,7 @@ jobs:
           release-artifacts/arrakis-cmdserver
           release-artifacts/arrakis-vsockserver
           release-artifacts/arrakis-vsockclient
+          release-artifacts/initramfs.cpio.gz
           release-artifacts/config.yaml
         generate_release_notes: true
       env:
