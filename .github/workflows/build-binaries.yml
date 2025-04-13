@@ -51,6 +51,16 @@ jobs:
     - name: Build rootfs
       run: sudo make guestrootfs
 
+    - name: Print rootfs image size
+      run: |
+        echo "============================================================"
+        echo "                  ROOTFS IMAGE DETAILS                    "
+        echo "============================================================"
+        ls -lh out/arrakis-guestrootfs-ext4.img
+        echo "File type: $(file out/arrakis-guestrootfs-ext4.img)"
+        echo "Disk usage: $(du -h out/arrakis-guestrootfs-ext4.img)"
+        echo "============================================================"
+
     - name: Create release artifacts directory
       run: mkdir -p release-artifacts
 
