@@ -43,7 +43,7 @@ ${OUT_DIR}/arrakis-chvapi.stamp: api/chv-api.yaml
 
 restserver: serverapi chvapi
 	mkdir -p ${OUT_DIR}
-	go build -o ${RESTSERVER_BIN} ./cmd/restserver
+	CGO_ENABLED=0 go build -o ${RESTSERVER_BIN} ./cmd/restserver
 
 client: serverapi
 	mkdir -p ${OUT_DIR}
