@@ -85,6 +85,22 @@ jobs:
         cp out/arrakis-guestrootfs-ext4.img.tar.gz release-artifacts/
         cp config.yaml release-artifacts/
 
+    - name: Create VERSION file
+      run: |
+        echo "Creating VERSION file with build metadata..."
+        echo "VERSION=release-${{ github.run_number }}" > release-artifacts/VERSION
+        echo "COMMIT=${{ github.sha }}" >> release-artifacts/VERSION
+        echo "COMMIT_SHORT=$(echo ${{ github.sha }} | cut -c1-8)" >> release-artifacts/VERSION
+        echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> release-artifacts/VERSION
+        echo "BRANCH=${{ github.ref_name }}" >> release-artifacts/VERSION
+        echo "BUILD_ID=${{ github.run_id }}" >> release-artifacts/VERSION
+        echo "BUILD_NUMBER=${{ github.run_number }}" >> release-artifacts/VERSION
+        echo "WORKFLOW=${{ github.workflow }}" >> release-artifacts/VERSION
+        echo "ACTOR=${{ github.actor }}" >> release-artifacts/VERSION
+        echo ""
+        echo "VERSION file contents:"
+        cat release-artifacts/VERSION
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -110,6 +126,7 @@ jobs:
           release-artifacts/initramfs.cpio.gz
           release-artifacts/arrakis-guestrootfs-ext4.img.tar.gz
           release-artifacts/config.yaml
+          release-artifacts/VERSION
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

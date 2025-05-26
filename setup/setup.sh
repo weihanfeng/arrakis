@@ -90,6 +90,32 @@ download_file "$RELEASE_URL/initramfs.cpio.gz" "$OUT_DIR/initramfs.cpio.gz" "Ini
 # Download config.yaml
 download_file "$RELEASE_URL/config.yaml" "$CONFIG_FILE" "Configuration file"
 
+# Download VERSION file
+download_file "$RELEASE_URL/VERSION" "$ARRAKIS_DIR/VERSION" "Version information file"
+
+# Function to display version information
+display_version_info() {
+  local version_file="$ARRAKIS_DIR/VERSION"
+  
+  if [ -f "$version_file" ]; then
+    print_message "Installed Arrakis Version Information:"
+    echo -e "${GREEN}================================${NC}"
+    while IFS='=' read -r key value; do
+      if [ -n "$key" ] && [ -n "$value" ]; then
+        printf "${YELLOW}%-15s${NC}: %s\n" "$key" "$value"
+      fi
+    done < "$version_file"
+    echo -e "${GREEN}================================${NC}"
+    echo ""
+    print_message "To check if you have the latest version, compare this with:"
+    print_message "https://github.com/abshkbh/arrakis/releases/latest"
+  else
+    print_warning "VERSION file not found. Version information unavailable."
+  fi
+}
+
+# Display version information
+display_version_info
 
 # Download install-images.py
 print_message "Downloading install-images.py script..."
