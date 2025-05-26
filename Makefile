@@ -47,7 +47,7 @@ restserver: serverapi chvapi
 
 client: serverapi
 	mkdir -p ${OUT_DIR}
-	go build -o ${CLIENT_BIN} ./cmd/client
+	CGO_ENABLED=0 go build -o ${CLIENT_BIN} ./cmd/client
 
 # Build the guest init binary explicitly statically if "os" or "net" are used by
 # using the CGO_ENABLED=0 flag.
