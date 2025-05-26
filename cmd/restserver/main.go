@@ -35,6 +35,18 @@ type restServer struct {
 	vmServer *server.Server
 }
 
+// Health check endpoint for load balancer monitoring
+func (s *restServer) healthCheck(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
 // Implement handler functions
 func (s *restServer) startVM(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithField("api", "startVM")
@@ -429,6 +441,7 @@ func main() {
 	r.HandleFunc("/vms/{name}/cmd", s.vmCommand).Methods("POST")
 	r.HandleFunc("/vms/{name}/files", s.vmFileUpload).Methods("POST")
 	r.HandleFunc("/vms/{name}/files", s.vmFileDownload).Methods("GET")
+	r.HandleFunc("/health", s.healthCheck).Methods("GET")
 
 	// Start HTTP server
 	srv := &http.Server{
