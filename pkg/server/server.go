@@ -960,7 +960,7 @@ func (s *Server) createVM(
 				{Path: statefulDiskPath, NumQueues: &numBlockDeviceQueues},
 			},
 			Cpus:    &chvapi.CpusConfig{BootVcpus: vcpus, MaxVcpus: vcpus},
-			Memory:  &chvapi.MemoryConfig{Size: int64(memorySizeMB * 1024 * 1024)},
+			Memory:  &chvapi.MemoryConfig{Size: int64(memorySizeMB) * 1024 * 1024},
 			Serial:  chvapi.NewConsoleConfig(serialPortMode),
 			Console: chvapi.NewConsoleConfig(consolePortMode),
 			Net: []chvapi.NetConfig{
@@ -974,9 +974,30 @@ func (s *Server) createVM(
 
 		resp, err := req.Execute()
 		if err != nil {
+			log.Errorf("CreateVM API call failed with error: %v", err)
+			if resp != nil {
+				log.Errorf("Response Status Code: %d", resp.StatusCode)
+				if resp.Body != nil {
+					body, readErr := io.ReadAll(resp.Body)
+					if readErr != nil {
+						log.Errorf("Failed to read response body: %v", readErr)
+					} else {
+						log.Errorf("Response Body: %s", string(body))
+					}
+				}
+			}
 			return nil, fmt.Errorf("failed to start VM: %w", err)
 		}
 		if resp.StatusCode != 204 {
+			log.Errorf("CreateVM returned unexpected status: %d", resp.StatusCode)
+			if resp.Body != nil {
+				body, readErr := io.ReadAll(resp.Body)
+				if readErr != nil {
+					log.Errorf("Failed to read response body: %v", readErr)
+				} else {
+					log.Errorf("Response Body: %s", string(body))
+				}
+			}
 			return nil, fmt.Errorf("failed to start VM. bad status: %v", resp)
 		}
 	}
