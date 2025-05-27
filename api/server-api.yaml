@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: VM Management API
   description: API for managing VMs via REST endpoints.
-  version: 1.0.0
+  version: 2.0.0
 servers:
   - url: http://{host}:{port}
     description: Development server
@@ -12,7 +12,7 @@ servers:
       port:
         default: "8080"
 paths:
-  /health:
+  /v1/health:
     get:
       summary: Health check endpoint
       responses:
@@ -36,7 +36,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /vms:
+  /v1/vms:
     get:
       summary: List all VMs
       responses:
@@ -94,7 +94,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /vms/{name}:
+  /v1/vms/{name}:
     get:
       summary: Get details of a specific VM
       parameters:
@@ -190,7 +190,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /vms/{name}/snapshots:
+  /v1/vms/{name}/snapshots:
     post:
       summary: Create a snapshot of a VM
       parameters:
@@ -235,7 +235,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /vms/{name}/cmd:
+  /v1/vms/{name}/cmd:
     post:
       summary: Execute command in VM
       parameters:
@@ -276,7 +276,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /vms/{name}/files:
+  /v1/vms/{name}/files:
     post:
       summary: Upload files to VM
       parameters:

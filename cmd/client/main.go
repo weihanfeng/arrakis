@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
@@ -47,9 +46,9 @@ func parseErrorResponse(operation string, httpResp *http.Response, err error) er
 }
 
 func stopVM(vmName string) error {
-	req := apiClient.DefaultAPI.VmsNamePatch(context.Background(), vmName)
+	req := apiClient.DefaultAPI.V1VmsNamePatch(context.Background(), vmName)
 
-	req = req.VmsNamePatchRequest(serverapi.VmsNamePatchRequest{
+	req = req.V1VmsNamePatchRequest(serverapi.V1VmsNamePatchRequest{
 		Status: serverapi.PtrString("stopped"),
 	})
 
@@ -63,9 +62,7 @@ func stopVM(vmName string) error {
 }
 
 func destroyVM(vmName string) error {
-	_, httpResp, err := apiClient.
-		DefaultAPI.
-		VmsNameDelete(context.Background(), vmName).Execute()
+	_, httpResp, err := apiClient.DefaultAPI.V1VmsNameDelete(context.Background(), vmName).Execute()
 	if err != nil {
 		return parseErrorResponse("destroy VM", httpResp, err)
 	}
@@ -75,7 +72,7 @@ func destroyVM(vmName string) error {
 }
 
 func destroyAllVMs() error {
-	_, httpResp, err := apiClient.DefaultAPI.VmsDelete(context.Background()).Execute()
+	_, httpResp, err := apiClient.DefaultAPI.V1VmsDelete(context.Background()).Execute()
 	if err != nil {
 		return parseErrorResponse("destroy all VMs", httpResp, err)
 	}
@@ -84,13 +81,7 @@ func destroyAllVMs() error {
 	return nil
 }
 
-func startVM(
-	vmName string,
-	kernel string,
-	rootfs string,
-	entryPoint string,
-	snapshotId string,
-) error {
+func startVM(vmName string, kernel string, rootfs string, entryPoint string, snapshotId string) error {
 	var startVMRequest *serverapi.StartVMRequest
 	if snapshotId != "" {
 		// If snapshot ID is provided, restore the VM from the snapshot
@@ -107,9 +98,7 @@ func startVM(
 		}
 	}
 
-	resp, httpResp, err := apiClient.DefaultAPI.
-		VmsPost(context.Background()).
-		StartVMRequest(*startVMRequest).Execute()
+	resp, httpResp, err := apiClient.DefaultAPI.V1VmsPost(context.Background()).StartVMRequest(*startVMRequest).Execute()
 	if err != nil {
 		return parseErrorResponse("start VM", httpResp, err)
 	}
@@ -123,7 +112,7 @@ func startVM(
 }
 
 func listAllVMs() error {
-	resp, httpResp, err := apiClient.DefaultAPI.VmsGet(context.Background()).Execute()
+	resp, httpResp, err := apiClient.DefaultAPI.V1VmsGet(context.Background()).Execute()
 	if err != nil {
 		return parseErrorResponse("list all VMs", httpResp, err)
 	}
@@ -185,17 +174,12 @@ func createApiClient(serverAddr string) (*serverapi.APIClient, error) {
 }
 
 func snapshotVM(vmName string, snapshotId string) error {
-	if snapshotId == "" {
-		timestamp := time.Now().Format("20060102-150405")
-		snapshotId = fmt.Sprintf("snapshot-%s-%s", vmName, timestamp)
+	req := serverapi.V1VmsNameSnapshotsPostRequest{}
+	if snapshotId != "" {
+		req.SetSnapshotId(snapshotId)
 	}
 
-	req := apiClient.DefaultAPI.VmsNameSnapshotsPost(context.Background(), vmName)
-	req = req.VmsNameSnapshotsPostRequest(serverapi.VmsNameSnapshotsPostRequest{
-		SnapshotId: serverapi.PtrString(snapshotId),
-	})
-
-	resp, httpResp, err := req.Execute()
+	resp, httpResp, err := apiClient.DefaultAPI.V1VmsNameSnapshotsPost(context.Background(), vmName).V1VmsNameSnapshotsPostRequest(req).Execute()
 	if err != nil {
 		return parseErrorResponse("create snapshot", httpResp, err)
 	}
@@ -208,8 +192,8 @@ func restoreVM(vmName string, snapshotId string) error {
 }
 
 func pauseVM(vmName string) error {
-	req := apiClient.DefaultAPI.VmsNamePatch(context.Background(), vmName)
-	req = req.VmsNamePatchRequest(serverapi.VmsNamePatchRequest{
+	req := apiClient.DefaultAPI.V1VmsNamePatch(context.Background(), vmName)
+	req = req.V1VmsNamePatchRequest(serverapi.V1VmsNamePatchRequest{
 		Status: serverapi.PtrString("paused"),
 	})
 	_, httpResp, err := req.Execute()
@@ -221,9 +205,9 @@ func pauseVM(vmName string) error {
 }
 
 func resumeVM(vmName string) error {
-	req := apiClient.DefaultAPI.VmsNamePatch(context.Background(), vmName)
-	req = req.VmsNamePatchRequest(serverapi.VmsNamePatchRequest{
-		Status: serverapi.PtrString("resume"),
+	req := apiClient.DefaultAPI.V1VmsNamePatch(context.Background(), vmName)
+	req = req.V1VmsNamePatchRequest(serverapi.V1VmsNamePatchRequest{
+		Status: serverapi.PtrString("stopped"),
 	})
 	_, httpResp, err := req.Execute()
 	if err != nil {
@@ -256,7 +240,7 @@ func uploadFiles(vmName string, fileSpecs []string) error {
 		}
 	}
 
-	req := apiClient.DefaultAPI.VmsNameFilesPost(context.Background(), vmName)
+	req := apiClient.DefaultAPI.V1VmsNameFilesPost(context.Background(), vmName)
 	req = req.VmFileUploadRequest(serverapi.VmFileUploadRequest{
 		Files: apiFiles,
 	})
@@ -271,12 +255,12 @@ func uploadFiles(vmName string, fileSpecs []string) error {
 }
 
 func runCommand(vmName string, cmd string) error {
-	req := apiClient.DefaultAPI.VmsNameCmdPost(context.Background(), vmName)
-	req = req.VmCommandRequest(serverapi.VmCommandRequest{
-		Cmd: cmd,
-	})
+	req := serverapi.VmCommandRequest{
+		Cmd:      cmd,
+		Blocking: serverapi.PtrBool(true),
+	}
 
-	resp, httpResp, err := req.Execute()
+	resp, httpResp, err := apiClient.DefaultAPI.V1VmsNameCmdPost(context.Background(), vmName).VmCommandRequest(req).Execute()
 	if err != nil {
 		return parseErrorResponse("run command", httpResp, err)
 	}
@@ -284,39 +268,26 @@ func runCommand(vmName string, cmd string) error {
 	if resp.GetError() != "" {
 		return fmt.Errorf("command failed: %s\nOutput: %s", resp.GetError(), resp.GetOutput())
 	}
-
 	fmt.Println(resp.GetOutput())
 	return nil
 }
 
 func downloadFiles(vmName string, paths []string) error {
-	pathsParam := strings.Join(paths, ",")
-	req := apiClient.DefaultAPI.VmsNameFilesGet(context.Background(), vmName)
-	req = req.Paths(pathsParam)
-
-	resp, httpResp, err := req.Execute()
+	pathsStr := strings.Join(paths, ",")
+	resp, httpResp, err := apiClient.DefaultAPI.V1VmsNameFilesGet(context.Background(), vmName).Paths(pathsStr).Execute()
 	if err != nil {
 		return parseErrorResponse("download files", httpResp, err)
 	}
 
 	for _, file := range resp.GetFiles() {
-		if file.GetError() != "" {
-			log.Warnf("error downloading %s: %s", file.GetPath(), file.GetError())
-			continue
-		}
-
-		err := os.WriteFile(file.GetPath(), []byte(file.GetContent()), 0644)
-		if err != nil {
-			log.Warnf("failed to write file %s: %v", file.GetPath(), err)
-			continue
-		}
-		log.Infof("downloaded file: %s", file.GetPath())
+		log.Infof("Downloaded file: %s", file.GetPath())
+		fmt.Printf("Content: %s\n", file.GetContent())
 	}
 	return nil
 }
 
 func listVM(vmName string) error {
-	resp, httpResp, err := apiClient.DefaultAPI.VmsNameGet(context.Background(), vmName).Execute()
+	resp, httpResp, err := apiClient.DefaultAPI.V1VmsNameGet(context.Background(), vmName).Execute()
 	if err != nil {
 		return parseErrorResponse("get VM info", httpResp, err)
 	}

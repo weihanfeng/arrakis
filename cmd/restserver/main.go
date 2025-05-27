@@ -19,6 +19,10 @@ import (
 	"github.com/abshkbh/arrakis/pkg/server"
 )
 
+const (
+	API_VERSION = "v1"
+)
+
 // sendErrorResponse sends a standardized error response to the client.
 func sendErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	resp := serverapi.ErrorResponse{
@@ -431,17 +435,17 @@ func main() {
 	r := mux.NewRouter()
 
 	// Register routes
-	r.HandleFunc("/vms", s.startVM).Methods("POST")
-	r.HandleFunc("/vms/{name}", s.updateVMState).Methods("PATCH")
-	r.HandleFunc("/vms/{name}", s.destroyVM).Methods("DELETE")
-	r.HandleFunc("/vms", s.destroyAllVMs).Methods("DELETE")
-	r.HandleFunc("/vms", s.listAllVMs).Methods("GET")
-	r.HandleFunc("/vms/{name}", s.listVM).Methods("GET")
-	r.HandleFunc("/vms/{name}/snapshots", s.snapshotVM).Methods("POST")
-	r.HandleFunc("/vms/{name}/cmd", s.vmCommand).Methods("POST")
-	r.HandleFunc("/vms/{name}/files", s.vmFileUpload).Methods("POST")
-	r.HandleFunc("/vms/{name}/files", s.vmFileDownload).Methods("GET")
-	r.HandleFunc("/health", s.healthCheck).Methods("GET")
+	r.HandleFunc("/"+API_VERSION+"/vms", s.startVM).Methods("POST")
+	r.HandleFunc("/"+API_VERSION+"/vms/{name}", s.updateVMState).Methods("PATCH")
+	r.HandleFunc("/"+API_VERSION+"/vms/{name}", s.destroyVM).Methods("DELETE")
+	r.HandleFunc("/"+API_VERSION+"/vms", s.destroyAllVMs).Methods("DELETE")
+	r.HandleFunc("/"+API_VERSION+"/vms", s.listAllVMs).Methods("GET")
+	r.HandleFunc("/"+API_VERSION+"/vms/{name}", s.listVM).Methods("GET")
+	r.HandleFunc("/"+API_VERSION+"/vms/{name}/snapshots", s.snapshotVM).Methods("POST")
+	r.HandleFunc("/"+API_VERSION+"/vms/{name}/cmd", s.vmCommand).Methods("POST")
+	r.HandleFunc("/"+API_VERSION+"/vms/{name}/files", s.vmFileUpload).Methods("POST")
+	r.HandleFunc("/"+API_VERSION+"/vms/{name}/files", s.vmFileDownload).Methods("GET")
+	r.HandleFunc("/"+API_VERSION+"/health", s.healthCheck).Methods("GET")
 
 	// Start HTTP server
 	srv := &http.Server{
