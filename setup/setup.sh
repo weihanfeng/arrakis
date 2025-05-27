@@ -57,15 +57,22 @@ mkdir -p "$OUT_DIR"
 
 
 # Get the latest release URL
-print_message "Determining latest release..."
-RELEASE_TAG=$(curl -s -L $LATEST_RELEASE_URL | grep -o "tag/release-[0-9]*" | head -1 | cut -d'/' -f2)
+# Check if a release version is provided as an argument
+if [ -n "${1:-}" ]; then
+  RELEASE_TAG="$1"
+  print_message "Using specified release version: $RELEASE_TAG"
+else
+  print_message "No release version specified. Determining latest release using original method..."
+  RELEASE_TAG_LATEST=$(curl -s -L "$LATEST_RELEASE_URL" | grep -o "tag/release-[0-9]*" | head -1 | cut -d'/' -f2)
 
-if [ -z "$RELEASE_TAG" ]; then
-  print_warning "Could not determine latest release tag. Using 'release-6' as default."
-  RELEASE_TAG="release-6"
+  if [ -z "$RELEASE_TAG_LATEST" ]; then
+    print_warning "Could not determine the latest release tag using the original method. Please check your network connection or GitHub status, or specify a release version manually (e.g., ./setup.sh release-33)."
+    print_warning "Exiting due to inability to determine release tag."
+    exit 1
+  fi
+  RELEASE_TAG="$RELEASE_TAG_LATEST"
+  print_message "Using latest release version determined: $RELEASE_TAG"
 fi
-
-print_message "Latest release tag: $RELEASE_TAG"
 RELEASE_URL="https://github.com/abshkbh/arrakis/releases/download/$RELEASE_TAG"
 
 # Download arrakis-restserver
