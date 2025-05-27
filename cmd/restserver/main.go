@@ -208,7 +208,7 @@ func (s *restServer) updateVMState(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	vmName := vars["name"]
 
-	var req serverapi.VmsNamePatchRequest
+	var req serverapi.V1VmsNamePatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.WithField("vmName", vmName).WithError(err).Error("Invalid request body")
 		sendErrorResponse(
