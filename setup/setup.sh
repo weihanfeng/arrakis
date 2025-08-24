@@ -8,7 +8,7 @@ NC='\033[0m' # No Color
 
 # Define variables
 ARRAKIS_DIR="./arrakis-prebuilt"
-LATEST_RELEASE_URL="https://github.com/abshkbh/arrakis/releases/latest"
+LATEST_RELEASE_URL="https://github.com/weihanfeng/arrakis/releases/latest"
 RESOURCES_DIR="$ARRAKIS_DIR/resources"
 RESOURCES_BIN_DIR="$RESOURCES_DIR/bin"
 OUT_DIR="$ARRAKIS_DIR/out"
@@ -73,7 +73,7 @@ else
   RELEASE_TAG="$RELEASE_TAG_LATEST"
   print_message "Using latest release version determined: $RELEASE_TAG"
 fi
-RELEASE_URL="https://github.com/abshkbh/arrakis/releases/download/$RELEASE_TAG"
+RELEASE_URL="https://github.com/weihanfeng/arrakis/releases/download/$RELEASE_TAG"
 
 # Download arrakis-restserver
 download_file "$RELEASE_URL/arrakis-restserver" "$ARRAKIS_DIR/arrakis-restserver" "Arrakis REST Server"
@@ -115,7 +115,7 @@ display_version_info() {
     echo -e "${GREEN}================================${NC}"
     echo ""
     print_message "To check if you have the latest version, compare this with:"
-    print_message "https://github.com/abshkbh/arrakis/releases/latest"
+    print_message "https://github.com/weihanfeng/arrakis/releases/latest"
   else
     print_warning "VERSION file not found. Version information unavailable."
   fi
@@ -126,7 +126,7 @@ display_version_info
 
 # Download install-images.py
 print_message "Downloading install-images.py script..."
-curl -L -o "$INSTALL_IMAGES_SCRIPT" "https://raw.githubusercontent.com/abshkbh/arrakis/main/setup/install-images.py"
+curl -L -o "$INSTALL_IMAGES_SCRIPT" "https://raw.githubusercontent.com/weihanfeng/arrakis/main/setup/install-images.py"
 chmod +x "$INSTALL_IMAGES_SCRIPT"
 
 # Run install-images.py to download required images
