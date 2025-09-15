@@ -64,6 +64,7 @@ RUN apt-get update && \
     tigervnc-standalone-server \
     socat \
     strace \
+    tree \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
